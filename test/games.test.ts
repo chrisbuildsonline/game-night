@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 
 // Env must be set before the modules open the database, hence the dynamic imports.
 const { whodunnit, validateCase, fallbackCase, tools } = await import('../src/whodunnit');
-const { twenty, ITEMS, answerOffline, startWith } = await import('../src/twenty');
+const { twenty, ITEMS, answerOffline, startWith, testHooks } = await import('../src/twenty');
 const { load } = await import('../src/hub');
 
 describe('Whodunnit at Home', () => {
@@ -39,7 +39,7 @@ describe('Whodunnit at Home', () => {
     expect(say(await tools.search_room({ room: 'kitchen' }))).toContain('nothing new');
     for (const s of c.suspects) out.push(say(await tools.interrogate({ suspect: s.role })));
     out.push(say(await (tools.case_status as any)({})));
-    expect(whodunnit.status()).toBe('a mystery is in progress: 5 of 5 rooms searched');
+    expect(whodunnit.status()).toBe("there's a mystery in progress and every room has been searched");
     for (const text of out) for (const secret of [c.motive, c.weapon, c.solution, 'The killer is']) expect(text).not.toContain(secret);
   });
 
@@ -75,6 +75,34 @@ describe('Whodunnit at Home', () => {
     expect(r).toContain(c.weapon);
     expect(r).toContain(c.motive);
     expect(say(await tools.interrogate({ suspect: c.killer }))).toContain('closed');
+  });
+
+  test('room names are cleaned and matched by whole word', async () => {
+    const intro = say(await tools.start_case({ rooms: ['the Kitchen', 'kitchen', 'Bathroom', 'a TV', 'Living Room'] }));
+    expect(load<any>('whodunnit').rooms).toEqual(['Kitchen', 'Bathroom', 'TV', 'Living Room']);
+    expect(intro).not.toMatch(/the the|of the a /i);
+    expect(say(await tools.search_room({ room: 'tv' }))).toContain('You search the TV');
+    expect(say(await tools.search_room({ room: 'room' }))).toContain('Living Room');
+    expect(say(await tools.search_room({ room: 'bath' }))).toContain('do not know');
+  });
+
+  test('a wrong accusation marks the clearing clue as found', async () => {
+    await tools.start_case({ rooms: ['Kitchen', 'Garage', 'Attic'] });
+    const c = solution();
+    const innocent = c.suspects.find((s: any) => s.name !== c.killer);
+    await tools.accuse({ suspect: innocent.name });
+    const proof = c.clues.find((cl: any) => cl.clears === innocent.name);
+    expect(say(await (tools.case_status as any)({}))).toContain(proof.text);
+  });
+
+  test('validateCase rejects unknown clue suspects, victim suspects and confusable names', () => {
+    const rooms = ['A', 'B'];
+    const c = fallbackCase(rooms);
+    expect(validateCase({ ...c, clues: [...c.clues, { room: 'A', text: 'x', clears: 'Nobody' }] }, rooms).join()).toContain('unknown suspect');
+    expect(validateCase({ ...c, victim: { ...c.victim, name: c.killer } }, rooms).join()).toContain('victim');
+    const twins = { ...c, suspects: c.suspects.map((s, i) => (i < 2 ? { ...s, name: `Mary Number${i}`, role: 'the twin' } : s)) };
+    expect(validateCase(twins, rooms).join()).toContain('confused');
+    expect(validateCase({ ...c, intro: `${c.intro} ${c.weapon}` }, rooms).join()).toContain('gives away');
   });
 });
 
@@ -122,7 +150,7 @@ describe('Twenty Questions', () => {
 
     test('wrong guesses count and the 20th question ends the game with a reveal', async () => {
       for (let i = 1; i < 20; i++) expect(await call('ask_question', { question: 'Can it fly?' })).toContain(`question ${i}.`);
-      expect(twenty.status()).toContain('19 questions used');
+      expect(twenty.status()).toContain('1 question left');
       const last = await call('ask_question', { question: 'Is it a cat?' });
       expect(last).toContain('out of questions');
       expect(last).toContain('a dog');
@@ -144,7 +172,28 @@ describe('Twenty Questions', () => {
       expect(await call('give_up')).toContain('a dog');
       expect(await call('make_guess', { guess: 'cat' })).toContain('over');
       expect(await call('start_twenty_questions', { category: 'food' })).toContain("thinking of a food");
-      expect(twenty.status()).toContain('0 questions used');
+      expect(twenty.status()).toContain('20 questions left');
+    });
+
+    test('make_guess needs an exact match, not a mention', async () => {
+      const all = ITEMS.filter((i) => i.category === 'animal').map((i) => i.name).join(' ');
+      expect(await call('make_guess', { guess: all })).toContain("No, it's not");
+      expect(await call('make_guess', { guess: 'a' })).toContain("What's your guess");
+      expect(await call('twenty_status')).toContain('1 question used');
+      expect(await call('make_guess', { guess: "I think it's dogs" })).toContain("It's a dog");
+    });
+
+    test('a question cannot talk the judge into a win; story requests are unclear', () => {
+      expect(answerOffline(dog, 'Tell me a story about a cat').answer).toBe('unclear');
+      expect(answerOffline(dog, 'Tell me a story about a dog').isCorrectGuess).toBe(false);
+    });
+
+    test('a round changed during the judge call is not overwritten', async () => {
+      testHooks.afterJudge = () => { startWith(ITEMS.find((i) => i.name === 'cat')!); };
+      const out = await call('ask_question', { question: 'Is it a pet?' });
+      testHooks.afterJudge = undefined;
+      expect(out).toContain('round changed');
+      expect(await call('twenty_status')).toContain('0 questions used');
     });
   });
 });

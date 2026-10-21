@@ -39,7 +39,9 @@ export function validateCase(c: Case, rooms: string[]): string[] {
   if (new Set(names.map((n) => n.toLowerCase())).size !== names.length) problems.push('suspect names must be unique');
   const killer = names.find((n) => same(n, c.killer));
   if (!killer) problems.push('killer is not a suspect');
+  if (names.some((n) => same(n, c.victim.name))) problems.push('the victim is a suspect');
   for (const cl of c.clues) {
+    for (const who of [cl.implicates, cl.clears]) if (who && !names.some((n) => same(n, who))) problems.push(`clue names unknown suspect ${who}`);
     if (!rooms.some((r) => same(r, cl.room))) problems.push(`clue in unknown room ${cl.room}`);
     if (cl.implicates && cl.clears) problems.push('a clue both implicates and clears');
   }
@@ -47,6 +49,14 @@ export function validateCase(c: Case, rooms: string[]): string[] {
   if (killer) {
     if (c.clues.filter((cl) => cl.implicates && same(cl.implicates, killer)).length < 2) problems.push('killer needs 2 implicating clues');
     if (c.clues.some((cl) => cl.clears && same(cl.clears, killer))) problems.push('killer is cleared');
+  }
+  for (const p of c.suspects) {
+    const others = c.suspects.filter((o) => o !== p).flatMap((o) => suspectKeys(o).map(norm));
+    if (suspectKeys(p).map(norm).some((k) => others.includes(k))) problems.push(`${p.name} is confused with another suspect`);
+    for (const secret of [c.weapon, c.motive]) {
+      const t = norm(secret);
+      if (t.length >= 4 && [c.intro, p.statement, p.alibi].some((x) => norm(x).includes(t))) problems.push(`${p.name} or the intro gives away the weapon or motive`);
+    }
   }
   for (const n of names) {
     if (killer && same(n, killer)) continue;
@@ -88,7 +98,7 @@ const FALLBACKS: Template[] = [
     victim: { name: 'Captain Alfie Bramble', description: 'a retired balloon pilot with a magnificent moustache' },
     suspects: [
       { name: 'Nora Quill', role: 'the librarian', description: 'a librarian who shushes everyone, even the cat', alibi: 'I was returning books in town.', statement: 'Shh. I was at the library in town, returning books. I always return my books.' },
-      { name: 'Fitz Hargrove', role: 'the butler', description: 'a butler who polishes everything, twice', alibi: 'I was dusting the hallway.', statement: 'I was dusting the hallway, sir. I never touched the Captain\'s telescope. Never.' },
+      { name: 'Fitz Hargrove', role: 'the butler', description: 'a butler who polishes everything, twice', alibi: 'I was dusting the hallway.', statement: 'I was dusting the hallway, sir. Nothing else, I assure you.' },
       { name: 'Juniper Vale', role: 'the niece', description: 'a niece who dances through every room', alibi: 'I was at my dance class.', statement: 'I was at dance class, spinning like a top. Twenty people can tell you.' },
       { name: 'Wilf Tuck', role: 'the postman', description: 'a postman with a very squeaky bicycle', alibi: 'I was delivering parcels.', statement: 'I was out on my round with the parcels. Rain or shine, that is me.' },
     ],
@@ -96,15 +106,15 @@ const FALLBACKS: Template[] = [
     motive: 'he was jealous that the Captain won the balloon race with a map Fitz had drawn',
     weapon: 'a heavy brass telescope',
     intro: 'The Captain once flew a balloon over seven villages. Tonight Captain Alfie Bramble was found on the floor of the {room}, and his flying days are over. A heavy object did the deed, and the culprit is still in the house.',
-    solution: 'Fitz Hargrove did it. The polished white glove and the torn map corner in his coat give him away. He was jealous about the balloon race map, and he used the brass telescope.',
+    solution: 'Fitz Hargrove did it. The polished white glove, the torn map corner in his coat and the dusted shelf give him away. He was jealous about the balloon race map, and he used the brass telescope.',
     clues: [
       { text: 'A white glove smudged with brass polish lies behind a cushion.', implicates: 'Fitz Hargrove' },
       { text: 'A library stamp proves Nora returned her books in town at the time of the crime.', clears: 'Nora Quill' },
       { text: 'The Captain\'s map has a torn corner. The missing piece sits in a coat pocket marked F. H.', implicates: 'Fitz Hargrove' },
       { text: 'A phone photo timestamp shows Juniper at dance class, with twenty witnesses.', clears: 'Juniper Vale' },
       { text: 'The postal van tracker shows Wilf stuck behind a tractor on the far side of the village.', clears: 'Wilf Tuck' },
-      { text: 'The telescope shelf was wiped spotless, but Fitz says he never touched it.', implicates: 'Fitz Hargrove' },
-      { text: 'A squeaky bicycle bell lies in the flowerbed. It is not the one on the crime.' },
+      { text: 'A shelf has been wiped spotless, leaving a clean ring where something heavy stood. A feather duster nearby is tagged F. H.', implicates: 'Fitz Hargrove' },
+      { text: 'A squeaky bicycle bell lies in the flowerbed, but nobody heard it ring last night.' },
       { text: 'A pie is missing one slice. The fork is still warm.' },
     ],
   },
@@ -133,12 +143,14 @@ Rules, all mandatory:
 - Everything is spoken aloud: short plain sentences, no markdown, no lists, no emoji.`;
 
 async function makeCase(rooms: string[], players: string[]): Promise<Case> {
-  const prompt = `Rooms of the family's house: ${rooms.join(', ')}.${players.length ? ` The detectives are: ${players.join(', ')}. They are not suspects.` : ''} Write the case.`;
-  const generated = await askJson(SYSTEM, prompt, CaseSchema);
-  if (generated) {
+  let prompt = `Rooms of the family's house: ${rooms.join(', ')}.${players.length ? ` The detectives are: ${players.join(', ')}. They are not suspects.` : ''} Write the case.`;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const generated = await askJson(SYSTEM, prompt, CaseSchema);
+    if (!generated) break;
     const problems = validateCase(generated, rooms);
     if (!problems.length) return generated;
     console.error('[whodunnit] generated case rejected:', problems.join('; '));
+    prompt += ` Your previous attempt was rejected for these problems, fix them: ${problems.join('; ')}.`;
   }
   return fallbackCase(rooms);
 }
@@ -147,15 +159,17 @@ async function makeCase(rooms: string[], players: string[]): Promise<Case> {
 
 const list = (xs: string[]) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs.at(-1)}`);
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\b(the|a|an|my|our|in|into|to)\b/g, ' ').replace(/\s+/g, ' ').trim();
+const hasWords = (hay: string, needle: string) => ` ${hay} `.includes(` ${needle} `);
+const suspectKeys = (x: Case['suspects'][number]) => [x.name, ...x.name.split(' '), x.role];
 
-// Exact match first, then any query/candidate containment (at least 3 characters).
+// Exact normalized match first, then whole-word match (so "room" never matches "bathroom").
 function fuzzy<T>(items: T[], query: string, keys: (item: T) => string[]): T | undefined {
   const q = norm(query);
-  if (q.length < 3) return undefined;
-  const cands = items.map((item) => ({ item, keys: keys(item).map(norm).filter((k) => k.length >= 3) }));
+  if (!q) return undefined;
+  const cands = items.map((item) => ({ item, keys: keys(item).map(norm).filter(Boolean) }));
   return (
     cands.find((c) => c.keys.includes(q))?.item ??
-    cands.find((c) => c.keys.some((k) => k.includes(q) || q.includes(k)))?.item
+    cands.find((c) => c.keys.some((k) => hasWords(k, q) || hasWords(q, k)))?.item
   );
 }
 
@@ -176,7 +190,8 @@ const roomClues = (s: State, room: string) => s.case.clues.map((cl, i) => ({ cl,
 
 export const tools = {
   async start_case({ rooms, players }: { rooms: string[]; players?: string[] }) {
-    const clean = [...new Map(rooms.map((r) => r.trim()).filter(Boolean).map((r) => [r.toLowerCase(), r])).values()];
+    const stripped = rooms.map((r) => r.trim().replace(/^(the|a|an|my|our)\s+/i, '')).filter(Boolean);
+    const clean = stripped.filter((r, i) => stripped.findIndex((o) => norm(o) === norm(r)) === i);
     if (clean.length < 2) return reply('I need at least two different rooms to hide clues in. Which rooms does your house have?');
     const c = await makeCase(clean, players ?? []);
     save(ID, { rooms: clean, players: players ?? [], case: c, found: [], wrong: [], over: false } satisfies State);
@@ -206,7 +221,7 @@ export const tools = {
   }),
 
   interrogate: withCase<{ suspect: string }>((s, { suspect }) => {
-    const p = fuzzy(s.case.suspects, suspect, (x) => [x.name, ...x.name.split(' '), x.role]);
+    const p = fuzzy(s.case.suspects, suspect, suspectKeys);
     if (!p) return reply(`I do not know a suspect called ${suspect}. The suspects are ${list(s.case.suspects.map((x) => x.name))}. Who shall we question?`);
     return reply(
       `You question ${p.name}. ${p.statement}`,
@@ -220,12 +235,12 @@ export const tools = {
     const clues = s.found.map((i) => s.case.clues[i]!.text).join(' ');
     return reply(
       `Rooms searched: ${searched.length ? list(searched) : 'none yet'}. Still to search: ${unsearched.length ? list(unsearched) : 'nothing'}. ${clues ? `Clues so far: ${clues}` : 'No clues yet.'} Suspects: ${list(s.case.suspects.map((x) => x.name))}. You have ${MAX_WRONG - s.wrong.length} accusations left.`,
-      'Summarize briefly and ask what to do next.',
+      'Summarise the clues in a sentence or two rather than reading them all out, then ask what to do next.',
     );
   }),
 
   accuse: withCase<{ suspect: string }>((s, { suspect }) => {
-    const p = fuzzy(s.case.suspects, suspect, (x) => [x.name, ...x.name.split(' '), x.role]);
+    const p = fuzzy(s.case.suspects, suspect, suspectKeys);
     if (!p) return reply(`I do not know a suspect called ${suspect}. The suspects are ${list(s.case.suspects.map((x) => x.name))}. Who do you accuse?`);
     const c = s.case;
     const reveal = `The killer is ${c.killer}. The motive: ${c.motive}. The weapon: ${c.weapon}. ${c.solution}`;
@@ -238,8 +253,9 @@ export const tools = {
       save(ID, { ...s, wrong, over: true });
       return reply(`${p.name} is innocent. That was your last accusation, and the culprit gets away. ${reveal} Want to try a new mystery?`, 'Be gracious and playful about the loss, then offer a new case.');
     }
-    save(ID, { ...s, wrong });
-    const proof = c.clues.find((cl) => cl.clears && same(cl.clears, p.name));
+    const proofAt = c.clues.findIndex((cl) => cl.clears && same(cl.clears, p.name));
+    const proof = c.clues[proofAt];
+    save(ID, { ...s, wrong, found: proofAt < 0 || s.found.includes(proofAt) ? s.found : [...s.found, proofAt] });
     return reply(
       `${p.name} is innocent!${proof ? ` Remember this: ${proof.text}` : ''} You have ${MAX_WRONG - wrong.length} accusations left. Keep investigating.`,
       'Be dramatic but encouraging. Do not say who the real killer is.',
@@ -258,15 +274,15 @@ export const whodunnit: Game = {
   status() {
     const s = load<State>(ID);
     if (!s || s.over) return null;
-    const done = s.rooms.filter((r) => roomClues(s, r).every((x) => s.found.includes(x.i))).length;
-    return `a mystery is in progress: ${done} of ${s.rooms.length} rooms searched`;
+    const left = s.rooms.filter((r) => roomClues(s, r).some((x) => !s.found.includes(x.i))).length;
+    return left ? `there's a mystery in progress with ${left} ${left === 1 ? 'room' : 'rooms'} left to search` : "there's a mystery in progress and every room has been searched";
   },
   register(server: McpServer) {
     server.registerTool(
       'start_case',
       {
         title: 'Start a mystery',
-        description: `Start a new cozy murder mystery set in the family's own house (replaces any current case). Call when the family wants to play Whodunnit or a murder mystery, e.g. "let's play whodunnit", "start a mystery", "another case". If they have not told you the names of the rooms in their house, ASK them first (for example "kitchen, living room, garage, bedroom"); do not invent rooms. Pass rooms (2 to 8 names, as the family says them) and optionally players (the detectives' names). The result is the opening story with the victim, the suspects and the rooms. ${SPOKEN} Ask which room to search or who to question. ${CONTEXT}`,
+        description: `Start a new cozy murder mystery set in the family's own house (replaces any current case). If list_games or the hub says a mystery is already in progress, confirm with the family before starting a new one, since it replaces the current case. Call when the family wants to play Whodunnit or a murder mystery, e.g. "let's play whodunnit", "start a mystery", "another case". If they have not told you the names of the rooms in their house, ASK them first (for example "kitchen, living room, garage, bedroom"); do not invent rooms. Pass rooms (2 to 8 names, as the family says them) and optionally players (the detectives' names). The result is the opening story with the victim, the suspects and the rooms. ${SPOKEN} Ask which room to search or who to question. ${CONTEXT}`,
         inputSchema: z.object({
           rooms: z.array(z.string()).min(2).max(8).describe('Names of real rooms in the house, 2 to 8'),
           players: z.array(z.string()).optional().describe('Names of the people playing (the detectives)'),

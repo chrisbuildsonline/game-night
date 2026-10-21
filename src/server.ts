@@ -54,7 +54,7 @@ const rejectForeign = (req: Request, hosts: string[]) =>
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 // Tunnels (cloudflared, ngrok) connect from loopback too, but they add these; their presence means a remote client.
-const FORWARDED = ['forwarded', 'x-forwarded-for', 'x-real-ip', 'cf-connecting-ip', 'true-client-ip'];
+const FORWARDED = ['forwarded', 'x-forwarded-for', 'x-real-ip', 'cf-connecting-ip', 'true-client-ip', 'x-forwarded-host', 'x-forwarded-proto', 'cf-ray', 'cf-visitor', 'via'];
 
 // Optional shared secret for a publicly exposed /mcp (Alexa+ itself expects OAuth 2.1; see README).
 const TOKEN = process.env.GAME_NIGHT_TOKEN;
@@ -67,7 +67,9 @@ if (import.meta.main && exposed && !TOKEN) {
 }
 function tokenOk(req: Request) {
   if (!TOKEN) return true;
-  const got = Buffer.from(req.headers.get('authorization') ?? '');
+  const header = req.headers.get('authorization') ?? '';
+  // the scheme is case-insensitive (RFC 7235); the token itself is compared timing-safe
+  const got = Buffer.from(/^bearer /i.test(header) ? `Bearer ${header.slice(7)}` : header);
   const want = Buffer.from(`Bearer ${TOKEN}`);
   return got.length === want.length && timingSafeEqual(got, want);
 }

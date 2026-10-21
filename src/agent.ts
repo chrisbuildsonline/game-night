@@ -60,12 +60,10 @@ const convs = new Map<string, Conv>();
 const MAX_CONVS = 50;
 const MAX_MESSAGES = 20;
 const conv = (id: string) => {
-  let c = convs.get(id);
-  if (!c) {
-    c = { history: [], game: null, expectRooms: false };
-    convs.set(id, c);
-    while (convs.size > MAX_CONVS) convs.delete(convs.keys().next().value!); // Map keeps insertion order: drop the oldest
-  }
+  const c = convs.get(id) ?? { history: [], game: null, expectRooms: false };
+  convs.delete(id);
+  convs.set(id, c); // re-insert so Map order is least recently used first
+  while (convs.size > MAX_CONVS) convs.delete(convs.keys().next().value!);
   return c;
 };
 
@@ -80,6 +78,7 @@ export function trimHistory(h: Anthropic.MessageParam[]) {
   for (const m of h) {
     if (m.role === 'assistant' && Array.isArray(m.content)) {
       m.content = m.content.filter((b) => b.type !== 'thinking' && b.type !== 'redacted_thinking');
+      if (!m.content.length) m.content = [{ type: 'text', text: '...' }]; // the API rejects empty assistant turns
     }
   }
 }

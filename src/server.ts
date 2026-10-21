@@ -48,7 +48,7 @@ const port = Number(process.env.PORT ?? 8686);
 // DNS-rebinding guard (MCP transport spec): Host and Origin must be localhost, or a public hostname you
 // list in ALLOWED_HOSTS (e.g. your tunnel). The demo page's /api/chat is localhost-only.
 const LOCAL = localhostAllowedHostnames();
-const PUBLIC = [...LOCAL, ...(process.env.ALLOWED_HOSTS ?? '').split(',').map((h) => h.trim()).filter(Boolean)];
+const PUBLIC = [...LOCAL, ...(process.env.ALLOWED_HOSTS ?? '').split(',').map((h) => h.trim().toLowerCase()).filter(Boolean)];
 const rejectForeign = (req: Request, hosts: string[]) =>
   hostHeaderValidationResponse(req, hosts) ?? originValidationResponse(req, hosts);
 

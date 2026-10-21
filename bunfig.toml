@@ -1,0 +1,3 @@
+[test]
+# bun test only scans test/: e2e/ is Playwright, live/ needs real keys (bun run test:live)
+root = "./test"

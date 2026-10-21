@@ -65,3 +65,13 @@ Severity: High = blocked a feature, Medium = cost real time or forced a design c
 - **Severity:** Low
 - **Workaround:** Read the rules through a logged-in tool.
 - **Suggestion:** Publish the rules as a plain page or a PDF too.
+
+## 7. `initialize` with bad params answers -32603 with a raw validation dump
+
+- **Task:** Check how the server handles malformed JSON-RPC.
+- **Steps:** POST `initialize` with `params: {}` (or a wrong `protocolVersion` type) to `/mcp`.
+- **Expected:** `-32602` (invalid params) with a short message.
+- **Actual:** `-32603` (internal error) whose message is the raw zod issue list. Our code has no `initialize` handler; the SDK registers it and validates inside the protocol layer.
+- **Severity:** Low (no crash, no stack trace)
+- **Workaround:** None in our code; we only test that the server stays up and the error is a JSON-RPC error.
+- **Suggestion:** Map schema failures in built-in request handlers to `InvalidParams` and keep validator output out of the message.

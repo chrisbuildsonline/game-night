@@ -52,7 +52,7 @@ await call('give_up');
 const conversation = `smoke-${Date.now()}`;
 for (const text of ['what games are there', 'search the kitchen']) {
   try {
-    const res = await fetch(`${BASE}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ conversation, text }) });
+    const res = await fetch(`${BASE}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json', ...AUTH }, body: JSON.stringify({ conversation, text }) });
     const data: any = await res.json();
     step(`POST /api/chat "${text}"`, res.ok && typeof data.reply === 'string' && data.reply.length > 0, `${short(data.reply ?? '')} [tools: ${(data.tools ?? []).map((t: any) => t.name)}]`);
   } catch (e) {
@@ -71,6 +71,12 @@ for (const [what, headers] of [['Origin', { origin: 'http://evil.example' }], ['
   step(`foreign ${what} is rejected on /mcp`, res.status === 403, `HTTP ${res.status}`);
 }
 if (AUTH.authorization) {
+  const spoofed = await fetch(`${BASE}/api/chat`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', host: 'localhost' },
+    body: JSON.stringify({ conversation: 'spoof', text: 'what games are there' }),
+  });
+  step('/api/chat with a spoofed localhost Host but no token is rejected', spoofed.status === 401, `HTTP ${spoofed.status}`);
   const res = await fetch(MCP_URL, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' }, body: JSON.stringify(init) });
   step('missing bearer token is rejected on /mcp', res.status === 401, `HTTP ${res.status}`);
 }

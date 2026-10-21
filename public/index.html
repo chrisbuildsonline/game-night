@@ -53,6 +53,9 @@
 </form>
 <footer>Connected to the Game Night MCP server over Streamable HTTP</footer>
 <script>
+// Optional GAME_NIGHT_TOKEN from the URL fragment (#token=...): kept in memory only, never sent in the URL.
+const TOKEN = new URLSearchParams(location.hash.slice(1)).get('token');
+if (TOKEN) history.replaceState(null, '', location.pathname);
 const $ = (id) => document.getElementById(id);
 const conversation = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2));
 const ring = $('ring'), logEl = $('log'), stateEl = $('state'), mic = $('mic'), input = $('text');
@@ -106,7 +109,7 @@ async function send(text) {
   add('user', text);
   setState('thinking');
   try {
-    const res = await fetch('/api/chat', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ conversation, text }) });
+    const res = await fetch('/api/chat', { method: 'POST', headers: { 'content-type': 'application/json', ...(TOKEN ? { authorization: 'Bearer ' + TOKEN } : {}) }, body: JSON.stringify({ conversation, text }) });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     add('bot', data.reply, data.tools);

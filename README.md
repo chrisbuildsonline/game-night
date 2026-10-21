@@ -86,7 +86,7 @@ Configuration is read only from environment variables. Bun loads a `.env` file i
 | `HOST` | `127.0.0.1` | Interface to bind. Keep the default behind a tunnel |
 | `PORT` | `8686` | HTTP port |
 | `ALLOWED_HOSTS` | none | Comma-separated public hostnames (e.g. your tunnel host) allowed in `Host`/`Origin` on `/mcp`. Localhost is always allowed |
-| `GAME_NIGHT_TOKEN` | none | When set, `/mcp` requires `Authorization: Bearer <token>` |
+| `GAME_NIGHT_TOKEN` | none | When set, `/mcp` and `/api/chat` require `Authorization: Bearer <token>` (open the page with `#token=<token>`) |
 | `GAME_DB` | `game-night.sqlite` | SQLite file |
 
 > **Status: the Bedrock path has not been run against the live service.** There were no AWS credentials on the build machine, and the hackathon's AWS credits ran out on Oct 7. The code is type-checked and follows the SDK's documented API, but treat it as untested until someone runs it. To enable it:
@@ -159,7 +159,9 @@ curl -s https://game-night-abc.trycloudflare.com/mcp -H "authorization: Bearer $
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"curl","version":"1"}}}'
 ```
 
-The MCP endpoint is then `https://<tunnel-host>/mcp`. The demo page's `/api/chat` stays localhost-only even when `ALLOWED_HOSTS` is set, because it can spend Bedrock credits. Leave `GAME_NIGHT_TOKEN` unset if your client cannot send a bearer token, but then anyone with the URL can play on your server.
+The MCP endpoint is then `https://<tunnel-host>/mcp`. The demo page's `/api/chat` stays localhost-only even when `ALLOWED_HOSTS` is set, because it can spend Bedrock credits: it requires a localhost `Host`/`Origin` **and** a loopback socket peer, and the bearer token too when `GAME_NIGHT_TOKEN` is set. With a token, open the page as `http://localhost:8686/#token=<GAME_NIGHT_TOKEN>`; the page keeps the token in memory, removes it from the address bar and sends it as an `Authorization` header.
+
+Do not use a tunnel that rewrites the `Host` header to localhost (e.g. `ngrok --host-header=rewrite`), and don't bind `HOST=0.0.0.0` without `GAME_NIGHT_TOKEN`: a tunnel's traffic arrives from a loopback peer, so a rewritten Host would make remote requests look local. Leave `GAME_NIGHT_TOKEN` unset if your client cannot send a bearer token, but then anyone with the URL can play on your server.
 
 ## Demo video script (under 3 minutes)
 

@@ -52,6 +52,8 @@ const PUBLIC = [...LOCAL, ...(process.env.ALLOWED_HOSTS ?? '').split(',').map((h
 const rejectForeign = (req: Request, hosts: string[]) =>
   hostHeaderValidationResponse(req, hosts) ?? originValidationResponse(req, hosts);
 
+const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+
 // Optional shared secret for a publicly exposed /mcp (Alexa+ itself expects OAuth 2.1; see README).
 const TOKEN = process.env.GAME_NIGHT_TOKEN;
 function tokenOk(req: Request) {
@@ -71,9 +73,13 @@ if (import.meta.main) {
         rejectForeign(req, PUBLIC) ?? (tokenOk(req) ? mcp.fetch(req) : new Response('Unauthorized', { status: 401 })),
       '/': () => new Response(Bun.file(new URL('../public/index.html', import.meta.url).pathname)),
       '/api/chat': {
-        POST: async (req) => {
+        POST: async (req, server) => {
+          // The demo page drives the agent (and Bedrock spend): loopback peers only, plus the token when one is set.
+          // The Host check alone isn't enough: HOST=0.0.0.0 or a Host-rewriting tunnel would let anyone send `Host: localhost`.
           const rejected = rejectForeign(req, LOCAL);
           if (rejected) return rejected;
+          if (!LOOPBACK.has(server.requestIP(req)?.address ?? '')) return new Response('Forbidden', { status: 403 });
+          if (!tokenOk(req)) return new Response('Unauthorized', { status: 401 });
           if (!req.headers.get('content-type')?.includes('application/json')) return new Response('Expected JSON', { status: 415 });
           const body = (await req.json().catch(() => null)) as { conversation?: unknown; text?: unknown } | null;
           if (typeof body?.conversation !== 'string' || typeof body.text !== 'string' || !body.text.trim()) {

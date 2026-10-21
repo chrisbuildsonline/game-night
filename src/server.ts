@@ -38,17 +38,32 @@ export function createServer() {
 const mcp = createMcpHandler(createServer, { onerror: (e) => console.error('[mcp]', e.message) });
 const port = Number(process.env.PORT ?? 8686);
 
+// DNS-rebinding guard (MCP transport spec): browsers send Origin; server-to-server clients like Alexa+ don't.
+const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? '').split(',').filter(Boolean);
+function originOk(req: Request) {
+  const origin = req.headers.get('origin');
+  if (!origin) return true;
+  const host = URL.canParse(origin) ? new URL(origin).hostname : '';
+  return host === 'localhost' || host === '127.0.0.1' || allowedOrigins.includes(origin);
+}
+const forbidden = () => new Response('Forbidden origin', { status: 403 });
+
 if (import.meta.main) {
   Bun.serve({
     port,
     idleTimeout: 120,
     routes: {
-      '/mcp': (req) => mcp.fetch(req),
+      '/mcp': (req) => (originOk(req) ? mcp.fetch(req) : forbidden()),
       '/': () => new Response(Bun.file(new URL('../public/index.html', import.meta.url).pathname)),
       '/api/chat': {
         POST: async (req) => {
-          const { conversation, text } = (await req.json()) as { conversation: string; text: string };
-          return Response.json(await chat(conversation, text));
+          if (!originOk(req)) return forbidden();
+          if (!req.headers.get('content-type')?.includes('application/json')) return new Response('Expected JSON', { status: 415 });
+          const body = (await req.json().catch(() => null)) as { conversation?: unknown; text?: unknown } | null;
+          if (typeof body?.conversation !== 'string' || typeof body.text !== 'string' || !body.text.trim()) {
+            return new Response('Expected { conversation, text }', { status: 400 });
+          }
+          return Response.json(await chat(body.conversation, body.text.slice(0, 500)));
         },
       },
     },

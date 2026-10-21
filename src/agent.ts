@@ -225,13 +225,22 @@ async function offlineTurn(c: Conv, raw: string, log: ToolLog[]): Promise<{ repl
   if ((m = t.match(/\b(?:my guess is|the answer is|i guess|i'?ll guess|final answer(?: is)?)\s+(?:it'?s\s+)?(?:an?\s+|the\s+)?(.+)$/))) {
     return call('make_guess', { guess: m[1].trim() });
   }
-  if (c.game === 'twenty' && (/\?$/.test(raw.trim()) || /^(is|does|can|do|has|was|are|will|would|could|did|how|what|where|who|which|have)\b/.test(t))) {
-    return call('ask_question', { question: raw.trim() });
+  const GAMES = /\b(what games|which games|games (?:are there|do you have)|open game night|game night|let'?s play|lets play|play a game|list games|what can we play)\b/;
+  const questionLike = /\?$/.test(raw.trim()) || /^(is|does|can|do|has|was|are|will|would|could|did|how|what|where|who|which|have)\b/.test(t);
+  // After a page reload the conversation has forgotten its game: ask the server whether a round of twenty questions is running.
+  if (c.game === null && !GAMES.test(t) && (/\b(question|asked)/.test(t) || (questionLike && !/\b(what do we know|recap|clues|where are we|status|so far|how are we doing)\b/.test(t)))) {
+    try {
+      const t20 = (await callTool('list_games', {})).text;
+      if (/twenty questions in progress/.test(t20)) c.game = 'twenty';
+    } catch {}
   }
-  if (/\b(status|where are we|what do we know|recap|how are we doing|clues|so far)\b/.test(t)) {
+  if (/\b(status|where are we|what do we know|recap|how are we doing|clues|so far|questions (?:are )?(?:left|remaining)|what have we asked)\b/.test(t)) {
     return call(c.game === 'twenty' ? 'twenty_status' : 'case_status');
   }
-  if (/\b(what games|which games|games (?:are there|do you have)|open game night|game night|let'?s play|lets play|play a game|list games|what can we play)\b/.test(t)) {
+  if (c.game === 'twenty' && questionLike) {
+    return call('ask_question', { question: raw.trim() });
+  }
+  if (GAMES.test(t)) {
     return call('list_games');
   }
   return say('I can run a mystery or a round of twenty questions. Try saying "what games are there".');

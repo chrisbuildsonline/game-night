@@ -53,9 +53,18 @@ const rejectForeign = (req: Request, hosts: string[]) =>
   hostHeaderValidationResponse(req, hosts) ?? originValidationResponse(req, hosts);
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+// Tunnels (cloudflared, ngrok) connect from loopback too, but they add these; their presence means a remote client.
+const FORWARDED = ['forwarded', 'x-forwarded-for', 'x-real-ip', 'cf-connecting-ip', 'true-client-ip'];
 
 // Optional shared secret for a publicly exposed /mcp (Alexa+ itself expects OAuth 2.1; see README).
 const TOKEN = process.env.GAME_NIGHT_TOKEN;
+// Fail closed: exposing the server (a tunnel host or a non-loopback bind) without a token would open the tools and Bedrock spend to anyone.
+const HOST = process.env.HOST ?? '127.0.0.1';
+const exposed = PUBLIC.length > LOCAL.length || (!LOOPBACK.has(HOST) && HOST !== 'localhost');
+if (import.meta.main && exposed && !TOKEN) {
+  console.error('Refusing to start: ALLOWED_HOSTS or a non-loopback HOST is set without GAME_NIGHT_TOKEN.');
+  process.exit(1);
+}
 function tokenOk(req: Request) {
   if (!TOKEN) return true;
   const got = Buffer.from(req.headers.get('authorization') ?? '');
@@ -66,7 +75,7 @@ function tokenOk(req: Request) {
 if (import.meta.main) {
   Bun.serve({
     port,
-    hostname: process.env.HOST ?? '127.0.0.1',
+    hostname: HOST,
     idleTimeout: 120,
     routes: {
       '/mcp': (req) =>
@@ -74,11 +83,13 @@ if (import.meta.main) {
       '/': () => new Response(Bun.file(new URL('../public/index.html', import.meta.url).pathname)),
       '/api/chat': {
         POST: async (req, server) => {
-          // The demo page drives the agent (and Bedrock spend): loopback peers only, plus the token when one is set.
-          // The Host check alone isn't enough: HOST=0.0.0.0 or a Host-rewriting tunnel would let anyone send `Host: localhost`.
+          // The demo page drives the agent (and Bedrock spend): direct loopback clients only, plus the token when one is set.
+          // Host alone can be spoofed; the peer IP alone can't tell a tunnel from a local browser, hence the forwarding headers.
           const rejected = rejectForeign(req, LOCAL);
           if (rejected) return rejected;
-          if (!LOOPBACK.has(server.requestIP(req)?.address ?? '')) return new Response('Forbidden', { status: 403 });
+          if (!LOOPBACK.has(server.requestIP(req)?.address ?? '') || FORWARDED.some((h) => req.headers.has(h))) {
+            return new Response('Forbidden', { status: 403 });
+          }
           if (!tokenOk(req)) return new Response('Unauthorized', { status: 401 });
           if (!req.headers.get('content-type')?.includes('application/json')) return new Response('Expected JSON', { status: 415 });
           const body = (await req.json().catch(() => null)) as { conversation?: unknown; text?: unknown } | null;

@@ -161,7 +161,7 @@ curl -s https://game-night-abc.trycloudflare.com/mcp -H "authorization: Bearer $
 
 The MCP endpoint is then `https://<tunnel-host>/mcp`. The demo page's `/api/chat` stays localhost-only even when `ALLOWED_HOSTS` is set, because it can spend Bedrock credits: it requires a localhost `Host`/`Origin` **and** a loopback socket peer, and the bearer token too when `GAME_NIGHT_TOKEN` is set. With a token, open the page as `http://localhost:8686/#token=<GAME_NIGHT_TOKEN>`; the page keeps the token in memory, removes it from the address bar and sends it as an `Authorization` header.
 
-Do not use a tunnel that rewrites the `Host` header to localhost (e.g. `ngrok --host-header=rewrite`), and don't bind `HOST=0.0.0.0` without `GAME_NIGHT_TOKEN`: a tunnel's traffic arrives from a loopback peer, so a rewritten Host would make remote requests look local. Leave `GAME_NIGHT_TOKEN` unset if your client cannot send a bearer token, but then anyone with the URL can play on your server.
+The server refuses to start when `ALLOWED_HOSTS` or a non-loopback `HOST` is set without `GAME_NIGHT_TOKEN`, so an exposed server always needs the token. The demo page's `/api/chat` also rejects any request carrying forwarding headers (`X-Forwarded-For`, `CF-Connecting-IP`, `Forwarded`, ...), which tunnels add, so it stays usable only from a browser on this machine. Avoid tunnels that rewrite `Host` to localhost (e.g. `ngrok --host-header=rewrite`) anyway.
 
 ## Demo video script (under 3 minutes)
 

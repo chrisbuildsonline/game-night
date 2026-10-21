@@ -229,6 +229,15 @@ describe('Given a mystery has been started', () => {
       expect(t).not.toContain('The killer is');
     });
 
+    test('when an innocent who was already cleared is accused again then no further accusation is used', async () => {
+      await tools.accuse({ suspect: innocents()[0].name });
+      const t = say(await tools.accuse({ suspect: innocents()[0].name }));
+      expect(t).toContain('already');
+      expect(t).toContain('You have 2 accusations left');
+      expect(status()).toContain('You have 2 accusations left');
+      expect(load<any>('whodunnit').wrong).toHaveLength(1);
+    });
+
     test('when two wrong accusations are made then one is left and the case is still open', async () => {
       await tools.accuse({ suspect: innocents()[0].name });
       const t = say(await tools.accuse({ suspect: innocents()[1].name }));

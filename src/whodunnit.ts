@@ -255,6 +255,9 @@ export const tools = {
       save(ID, { ...s, over: true });
       return reply(`Correct! ${p.name} did it! ${reveal} Case solved. Want a new mystery?`, 'Celebrate with the family, then offer a new case.');
     }
+    if (s.wrong.some((w) => same(w, p.name))) {
+      return reply(`We already cleared ${p.name}. You have ${MAX_WRONG - s.wrong.length} accusations left. Who else do you accuse?`, 'No accusation was used.');
+    }
     const wrong = [...s.wrong, p.name];
     if (wrong.length >= MAX_WRONG) {
       save(ID, { ...s, wrong, over: true });

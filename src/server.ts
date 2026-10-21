@@ -36,7 +36,7 @@ export function createServer() {
 }
 
 const mcp = createMcpHandler(createServer, { onerror: (e) => console.error('[mcp]', e.message) });
-const port = Number(process.env.PORT ?? 8787);
+const port = Number(process.env.PORT ?? 8686);
 
 if (import.meta.main) {
   Bun.serve({

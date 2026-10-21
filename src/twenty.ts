@@ -51,14 +51,15 @@ const KEYWORDS: [RegExp, string][] = [
 ];
 
 const norm = (s: string) => ` ${s.toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\b(a|an|the)\b/g, ' ').replace(/\s+/g, ' ').trim()} `;
+const plurals = (t: string) => [`${t}s`, ...(/[^aeiou]y$/.test(t) ? [`${t.slice(0, -1)}ies`] : [])];
 const mentions = (text: string, item: Item) =>
-  [item.name, ...item.aliases].some((t) => norm(text).includes(norm(t)) || norm(text).includes(norm(`${t}s`)));
+  [item.name, ...item.aliases].some((t) => norm(text).includes(norm(t)) || plurals(t).some((p) => norm(text).includes(norm(p))));
 // A guess must equal the name or an alias (simple plural allowed) once filler like "I think" is stripped.
 const FILLER = /\b(is it|is that|it is|it s|its|i think|i guess|maybe|perhaps|could it be|our guess is|my guess is|we think|we guess)\b/g;
 const guessCore = (text: string) => norm(text.toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(FILLER, ' ')).trim();
 const isGuessOf = (text: string, item: Item) => {
   const g = guessCore(text);
-  return [item.name, ...item.aliases].some((t) => g === norm(t).trim() || g === norm(`${t}s`).trim());
+  return [item.name, ...item.aliases].some((t) => g === norm(t).trim() || plurals(t).some((p) => g === norm(p).trim()));
 };
 const UNCOUNTABLE = new Set(['cheese', 'ice cream', 'broccoli', 'bread', 'popcorn', 'chocolate']);
 const a = (name: string) => (UNCOUNTABLE.has(name) ? name : `${/^[aeiou]/.test(name) ? 'an' : 'a'} ${name}`);

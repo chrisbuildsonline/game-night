@@ -7,7 +7,7 @@ import type * as z from 'zod';
 const env = process.env;
 const hasCreds = Boolean(env.AWS_BEARER_TOKEN_BEDROCK || env.AWS_ACCESS_KEY_ID || env.AWS_PROFILE);
 export const bedrockOn = env.BEDROCK === 'on' || (env.BEDROCK !== 'off' && hasCreds);
-export const MODEL = env.BEDROCK_MODEL ?? 'anthropic.claude-sonnet-5-5';
+export const MODEL = env.BEDROCK_MODEL_ID ?? 'anthropic.claude-sonnet-5-5';
 export const bedrock = bedrockOn
   ? new AnthropicBedrockMantle({ awsRegion: env.AWS_REGION ?? 'us-east-1', timeout: 20_000, maxRetries: 0 })
   : null;

@@ -1,6 +1,7 @@
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 
-const MCP_URL = process.env.MCP_URL ?? 'http://localhost:8686/mcp';
+const MCP_URL = process.env.MCP_URL ?? 'http://127.0.0.1:8686/mcp';
+const AUTH: Record<string, string> = process.env.GAME_NIGHT_TOKEN ? { authorization: `Bearer ${process.env.GAME_NIGHT_TOKEN}` } : {};
 const BASE = new URL(MCP_URL).origin;
 let failed = 0;
 const step = (name: string, ok: boolean, detail = '') => {
@@ -10,7 +11,7 @@ const step = (name: string, ok: boolean, detail = '') => {
 const short = (s: string) => s.replace(/\s+/g, ' ').slice(0, 90);
 
 const client = new Client({ name: 'game-night-smoke', version: '1.0.0' });
-await client.connect(new StreamableHTTPClientTransport(new URL(MCP_URL)));
+await client.connect(new StreamableHTTPClientTransport(new URL(MCP_URL), { requestInit: { headers: AUTH } }));
 console.log('protocol version:', client.getNegotiatedProtocolVersion());
 
 const call = async (name: string, args: Record<string, unknown> = {}) => {
@@ -57,6 +58,21 @@ for (const text of ['what games are there', 'search the kitchen']) {
   } catch (e) {
     step(`POST /api/chat "${text}"`, false, (e as Error).message);
   }
+}
+
+// DNS-rebinding guard: a foreign Host or Origin must be rejected
+const init = { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'evil', version: '1' } } };
+for (const [what, headers] of [['Origin', { origin: 'http://evil.example' }], ['Host', { host: 'evil.example' }]] as const) {
+  const res = await fetch(MCP_URL, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...AUTH, ...headers },
+    body: JSON.stringify(init),
+  });
+  step(`foreign ${what} is rejected on /mcp`, res.status === 403, `HTTP ${res.status}`);
+}
+if (AUTH.authorization) {
+  const res = await fetch(MCP_URL, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' }, body: JSON.stringify(init) });
+  step('missing bearer token is rejected on /mcp', res.status === 401, `HTTP ${res.status}`);
 }
 
 await client.close();

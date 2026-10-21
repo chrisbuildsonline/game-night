@@ -197,3 +197,20 @@ describe('Twenty Questions', () => {
     });
   });
 });
+
+describe('simulated Alexa+ agent', () => {
+  test('history is trimmed to about 20 messages at a plain user turn, without thinking blocks', async () => {
+    const { trimHistory } = await import('../src/agent');
+    const turn = (i: number): any[] => [
+      { role: 'user', content: `turn ${i}` },
+      { role: 'assistant', content: [{ type: 'thinking', thinking: '', signature: 's' }, { type: 'tool_use', id: `t${i}`, name: 'case_status', input: {} }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: `t${i}`, content: 'ok' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'ok' }] },
+    ];
+    const h = Array.from({ length: 10 }, (_, i) => turn(i)).flat();
+    trimHistory(h);
+    expect(h.length).toBeLessThanOrEqual(20);
+    expect(h[0]).toEqual({ role: 'user', content: 'turn 5' });
+    expect(JSON.stringify(h)).not.toContain('"thinking"');
+  });
+});

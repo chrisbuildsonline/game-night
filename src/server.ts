@@ -1,4 +1,11 @@
-import { McpServer, createMcpHandler } from '@modelcontextprotocol/server';
+import { timingSafeEqual } from 'node:crypto';
+import {
+  McpServer,
+  createMcpHandler,
+  hostHeaderValidationResponse,
+  localhostAllowedHostnames,
+  originValidationResponse,
+} from '@modelcontextprotocol/server';
 import { reply, type Game } from './hub';
 import { whodunnit } from './whodunnit';
 import { twenty } from './twenty';
@@ -38,26 +45,35 @@ export function createServer() {
 const mcp = createMcpHandler(createServer, { onerror: (e) => console.error('[mcp]', e.message) });
 const port = Number(process.env.PORT ?? 8686);
 
-// DNS-rebinding guard (MCP transport spec): browsers send Origin; server-to-server clients like Alexa+ don't.
-const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? '').split(',').filter(Boolean);
-function originOk(req: Request) {
-  const origin = req.headers.get('origin');
-  if (!origin) return true;
-  const host = URL.canParse(origin) ? new URL(origin).hostname : '';
-  return host === 'localhost' || host === '127.0.0.1' || allowedOrigins.includes(origin);
+// DNS-rebinding guard (MCP transport spec): Host and Origin must be localhost, or a public hostname you
+// list in ALLOWED_HOSTS (e.g. your tunnel). The demo page's /api/chat is localhost-only.
+const LOCAL = localhostAllowedHostnames();
+const PUBLIC = [...LOCAL, ...(process.env.ALLOWED_HOSTS ?? '').split(',').map((h) => h.trim()).filter(Boolean)];
+const rejectForeign = (req: Request, hosts: string[]) =>
+  hostHeaderValidationResponse(req, hosts) ?? originValidationResponse(req, hosts);
+
+// Optional shared secret for a publicly exposed /mcp (Alexa+ itself expects OAuth 2.1; see README).
+const TOKEN = process.env.GAME_NIGHT_TOKEN;
+function tokenOk(req: Request) {
+  if (!TOKEN) return true;
+  const got = Buffer.from(req.headers.get('authorization') ?? '');
+  const want = Buffer.from(`Bearer ${TOKEN}`);
+  return got.length === want.length && timingSafeEqual(got, want);
 }
-const forbidden = () => new Response('Forbidden origin', { status: 403 });
 
 if (import.meta.main) {
   Bun.serve({
     port,
+    hostname: process.env.HOST ?? '127.0.0.1',
     idleTimeout: 120,
     routes: {
-      '/mcp': (req) => (originOk(req) ? mcp.fetch(req) : forbidden()),
+      '/mcp': (req) =>
+        rejectForeign(req, PUBLIC) ?? (tokenOk(req) ? mcp.fetch(req) : new Response('Unauthorized', { status: 401 })),
       '/': () => new Response(Bun.file(new URL('../public/index.html', import.meta.url).pathname)),
       '/api/chat': {
         POST: async (req) => {
-          if (!originOk(req)) return forbidden();
+          const rejected = rejectForeign(req, LOCAL);
+          if (rejected) return rejected;
           if (!req.headers.get('content-type')?.includes('application/json')) return new Response('Expected JSON', { status: 415 });
           const body = (await req.json().catch(() => null)) as { conversation?: unknown; text?: unknown } | null;
           if (typeof body?.conversation !== 'string' || typeof body.text !== 'string' || !body.text.trim()) {
@@ -69,5 +85,5 @@ if (import.meta.main) {
     },
     fetch: () => new Response('Not found', { status: 404 }),
   });
-  console.log(`Game Night on http://localhost:${port} (MCP: /mcp, Bedrock: ${bedrockOn ? MODEL : 'off, using offline fallbacks'})`);
+  console.log(`Game Night on http://localhost:${port} (MCP: /mcp${TOKEN ? ' with bearer token' : ''}, Bedrock: ${bedrockOn ? MODEL : 'off, using offline fallbacks'})`);
 }

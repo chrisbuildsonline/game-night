@@ -75,17 +75,19 @@ Every Bedrock call has an offline fallback, so the demo never breaks:
 - a fact-table yes/no answerer;
 - a rule-based intent router for the web app.
 
-Configuration (environment variables):
+Configuration is read only from environment variables. Bun loads a `.env` file in the project root automatically; `.env` is gitignored, so keep secrets there and never commit them.
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `AWS_REGION` | `us-east-1` | Bedrock region |
-| AWS credentials | none | Any of `AWS_BEARER_TOKEN_BEDROCK`, `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`, or `AWS_PROFILE` switches Bedrock on |
-| `BEDROCK` | auto | `on` forces Bedrock (default credential chain), `off` forces the offline fallbacks |
-| `BEDROCK_MODEL` | `anthropic.claude-sonnet-5-5` | Bedrock model id |
+| AWS credentials | none | `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`, or `AWS_PROFILE`, or a Bedrock API key in `AWS_BEARER_TOKEN_BEDROCK`. Any of them switches Bedrock on |
+| `BEDROCK` | auto | `on` forces Bedrock (default AWS credential chain), `off` forces the offline fallbacks |
+| `BEDROCK_MODEL_ID` | `anthropic.claude-sonnet-5-5` | Bedrock model id |
+| `HOST` | `127.0.0.1` | Interface to bind. Keep the default behind a tunnel |
 | `PORT` | `8686` | HTTP port |
+| `ALLOWED_HOSTS` | none | Comma-separated public hostnames (e.g. your tunnel host) allowed in `Host`/`Origin` on `/mcp`. Localhost is always allowed |
+| `GAME_NIGHT_TOKEN` | none | When set, `/mcp` requires `Authorization: Bearer <token>` |
 | `GAME_DB` | `game-night.sqlite` | SQLite file |
-| `ALLOWED_ORIGINS` | none | Extra browser origins allowed to call the server (comma-separated) |
 
 > **Status: the Bedrock path has not been run against the live service.** There were no AWS credentials on the build machine, and the hackathon's AWS credits ran out on Oct 7. The code is type-checked and follows the SDK's documented API, but treat it as untested until someone runs it. To enable it:
 > 1. In the AWS console, open Amazon Bedrock in your region and enable access to Claude Sonnet 5.5.
@@ -112,7 +114,7 @@ bun start                  # Game Night on http://localhost:8686 (MCP endpoint: 
 - **Any MCP client:** point it at `http://localhost:8686/mcp`, for example `npx @modelcontextprotocol/inspector`. You can also use plain curl:
 
   ```sh
-  curl -s localhost:8686/mcp -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' \
+  curl -s 127.0.0.1:8686/mcp -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' \
     -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"curl","version":"1"}}}'
   ```
 
@@ -120,7 +122,7 @@ bun start                  # Game Night on http://localhost:8686 (MCP endpoint: 
 
 **Verified from Amazon's docs** (the [MCP Toolkit quickstart](https://developer.amazon.com/docs/alexaplus/add-ons/mcp-toolkit-quickstart) and [overview](https://developer.amazon.com/docs/alexaplus/add-ons/mcp-toolkit-overview), read Oct 21 2026):
 - "Alexa+ for Builders supports the 2025-11-25 version of the MCP specification." and "Your MCP server must support Streamable HTTP." Game Night does both.
-- "Your MCP server must be accessible via a remote URL. During local development, you can use a tunneling service (such as cloudflared) to expose your server." For example: `cloudflared tunnel --url http://localhost:8686`, then use `https://<name>.trycloudflare.com/mcp`.
+- "Your MCP server must be accessible via a remote URL. During local development, you can use a tunneling service (such as cloudflared) to expose your server." See "Exposing the server" below.
 - Registration goes through the `alexa-ai` CLI:
   - `alexa-ai configure`
   - `alexa-ai new mcp --name "Game Night" --locale en-US --mcp-server-url "https://<your-host>/mcp"`
@@ -132,12 +134,32 @@ bun start                  # Game Night on http://localhost:8686 (MCP endpoint: 
 
 **Not verified, or not done:**
 - We did not have access to the `alexa-ai` CLI or the Alexa+ web simulator, so Game Night has **not** been connected to a real Alexa+ device. The demo uses the simulated Alexa+ web app, which the hackathon rules allow ("entrants may submit a simulated Alexa+ experience instead").
-- Game Night does **not** implement OAuth. It serves anonymous requests and guards against DNS rebinding by checking `Origin`. The docs don't make clear whether auth is required for every add-on or only for account linking. A real Alexa+ deployment probably needs an OAuth 2.1 / RFC 9728 layer in front of `/mcp`.
+- **Auth:** the only auth the Alexa+ docs describe is OAuth 2.1 (authorization code with PKCE S256, Bearer token on every request, RFC 9728 Protected Resource Metadata, `401` without `WWW-Authenticate` for unauthenticated requests). Game Night does **not** implement OAuth. Its optional `GAME_NIGHT_TOKEN` is a static shared bearer token: it protects a public endpoint for MCP clients you configure yourself (Inspector, the smoke check, your own agent), but nothing in Amazon's docs says Alexa+ can send a static token, so assume it can't (unverified). The docs also don't make clear whether OAuth is required for every add-on or only for account linking. A real Alexa+ deployment probably needs an OAuth 2.1 / RFC 9728 layer in front of `/mcp`.
 - **Latency:**
   - The offline paths answer well under 500 ms.
   - Bedrock calls cannot: an LLM-generated mystery takes seconds. Each Bedrock call times out after 20 s (a rejected case is retried once), then falls back to a built-in case.
   - We don't know how Alexa+ treats a slow tool call. A deployment that needs to stay under 500 ms can set `BEDROCK=off` for the tools, which keeps the built-in cases.
 - The docs don't state tool-call timeouts, response-size limits or a maximum number of tools.
+
+### Exposing the server
+
+The server binds to `127.0.0.1` and rejects any `Host` or `Origin` that isn't localhost (DNS-rebinding protection, using the MCP SDK's `hostHeaderValidationResponse` / `originValidationResponse`). To reach it from outside through a tunnel:
+
+```sh
+# 1. Start a tunnel and note its hostname, e.g. game-night-abc.trycloudflare.com
+cloudflared tunnel --url http://127.0.0.1:8686
+# 2. In .env (gitignored):
+#    ALLOWED_HOSTS=game-night-abc.trycloudflare.com
+#    GAME_NIGHT_TOKEN=<a long random string, e.g. from: openssl rand -hex 32>
+# 3. Start the server
+bun start
+# 4. Check it from outside
+curl -s https://game-night-abc.trycloudflare.com/mcp -H "authorization: Bearer $GAME_NIGHT_TOKEN" \
+  -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"curl","version":"1"}}}'
+```
+
+The MCP endpoint is then `https://<tunnel-host>/mcp`. The demo page's `/api/chat` stays localhost-only even when `ALLOWED_HOSTS` is set, because it can spend Bedrock credits. Leave `GAME_NIGHT_TOKEN` unset if your client cannot send a bearer token, but then anyone with the URL can play on your server.
 
 ## Demo video script (under 3 minutes)
 
@@ -157,7 +179,7 @@ Recorded on the simulated Alexa+ web app with speech on. Lead with the mystery r
 ## Limitations
 
 - One household per server: each game has one current round.
-- No OAuth, so it is not ready to register with Alexa+ as is (see above).
+- No OAuth, so it is not ready to register with Alexa+ as is (see above). The optional static bearer token is for clients you control.
 - The offline Twenty Questions answerer only knows the facts in its table. Unusual questions get "try asking another way" and are not counted.
 - Bedrock paths are untested against the live service.
 

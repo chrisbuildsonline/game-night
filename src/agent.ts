@@ -12,8 +12,10 @@ let toolsCache: McpTool[] | null = null;
 function connect(): Promise<Client> {
   clientP ??= (async () => {
     const client = new Client({ name: 'simulated-alexa', version: '1.0.0' });
-    const url = new URL(`http://localhost:${process.env.PORT ?? 8686}/mcp`);
-    await client.connect(new StreamableHTTPClientTransport(url));
+    const url = new URL(`http://127.0.0.1:${process.env.PORT ?? 8686}/mcp`);
+    const token = process.env.GAME_NIGHT_TOKEN;
+    const headers: Record<string, string> = token ? { authorization: `Bearer ${token}` } : {};
+    await client.connect(new StreamableHTTPClientTransport(url, { requestInit: { headers } }));
     return client;
   })();
   clientP.catch(() => (clientP = null));
@@ -55,24 +57,38 @@ const strip = (s: string) => s.split(/\n*HOST NOTE:/)[0].trim();
 // ---- per-conversation state ----
 type Conv = { history: Anthropic.MessageParam[]; game: 'whodunnit' | 'twenty' | null; expectRooms: boolean };
 const convs = new Map<string, Conv>();
-const MAX_CONVS = 200;
-const MAX_HISTORY = 60;
+const MAX_CONVS = 50;
+const MAX_MESSAGES = 20;
 const conv = (id: string) => {
   let c = convs.get(id);
   if (!c) {
     c = { history: [], game: null, expectRooms: false };
     convs.set(id, c);
-    while (convs.size > MAX_CONVS) convs.delete(convs.keys().next().value!);
+    while (convs.size > MAX_CONVS) convs.delete(convs.keys().next().value!); // Map keeps insertion order: drop the oldest
   }
-  // reset at a user-turn boundary (this runs before the new user message is appended)
-  if (c.history.length > MAX_HISTORY) c.history = [];
   return c;
 };
+
+// Keep about the last MAX_MESSAGES messages, cut at a plain user turn so no tool_use loses its tool_result.
+// The kept history no longer has its original prefix, so its thinking blocks would fail the API's
+// conversation-binding check: drop them, which is the documented recovery.
+export function trimHistory(h: Anthropic.MessageParam[]) {
+  if (h.length <= MAX_MESSAGES) return;
+  let i = h.length - MAX_MESSAGES;
+  while (i < h.length && !(h[i]!.role === 'user' && typeof h[i]!.content === 'string')) i++;
+  h.splice(0, i);
+  for (const m of h) {
+    if (m.role === 'assistant' && Array.isArray(m.content)) {
+      m.content = m.content.filter((b) => b.type !== 'thinking' && b.type !== 'redacted_thinking');
+    }
+  }
+}
 
 export async function chat(conversation: string, text: string): Promise<{ reply: string; tools: ToolLog[] }> {
   const c = conv(conversation);
   const tools: ToolLog[] = [];
   if (bedrock) {
+    trimHistory(c.history); // before histLen, which the error path restores to
     const histLen = c.history.length;
     try {
       const reply = await bedrockTurn(c, text, tools);

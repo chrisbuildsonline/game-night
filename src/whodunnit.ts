@@ -240,6 +240,13 @@ export const tools = {
   }),
 
   accuse: withCase<{ suspect: string }>((s, { suspect }) => {
+    const named = s.case.suspects.filter((x) => suspectKeys(x).map(norm).some((k) => k && hasWords(norm(suspect), k)));
+    if (named.length > 1) {
+      return reply(
+        `One suspect at a time, detectives. Who do you accuse: ${list(named.map((x) => x.name))}?`,
+        'An accusation must name exactly one suspect. No accusation was used; ask the family to pick one.',
+      );
+    }
     const p = fuzzy(s.case.suspects, suspect, suspectKeys);
     if (!p) return reply(`I do not know a suspect called ${suspect}. The suspects are ${list(s.case.suspects.map((x) => x.name))}. Who do you accuse?`);
     const c = s.case;

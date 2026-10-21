@@ -184,7 +184,7 @@ export const twenty: Game = {
       if (s.log.length + 1 >= MAX) return finish(s, false, `Is it ${a(clean)}?`, 'no');
       s.log.push({ q: `Is it ${a(clean)}?`, a: 'no' });
       save('twenty', s);
-      return reply(`No, it's not ${a(clean)}. That's question ${s.log.length}. You have ${MAX - s.log.length} left.`);
+      return reply(`No, it's not ${/^[a-z]+$/.test(clean) && !clean.endsWith('s') ? a(clean) : clean}. That's question ${s.log.length}. You have ${MAX - s.log.length} left.`);
     });
 
     server.registerTool('twenty_status', {

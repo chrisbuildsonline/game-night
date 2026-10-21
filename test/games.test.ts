@@ -66,6 +66,13 @@ describe('Whodunnit at Home', () => {
     expect(whodunnit.status()).toBeNull();
   });
 
+  test('accusing two suspects at once asks for one and uses no accusation', async () => {
+    await tools.start_case({ rooms: ['Kitchen', 'Garage', 'Attic'] });
+    const [a, b] = solution().suspects.map((s: any) => s.name);
+    expect(say(await tools.accuse({ suspect: `${a} and ${b}` }))).toContain('One suspect at a time');
+    expect(say(await (tools.case_status as any)({}))).toContain('3 accusations left');
+  });
+
   test('three wrong accusations end the case and reveal', async () => {
     await tools.start_case({ rooms: ['Kitchen', 'Garage'] });
     const c = solution();
@@ -173,6 +180,12 @@ describe('Twenty Questions', () => {
       expect(await call('make_guess', { guess: 'cat' })).toContain('over');
       expect(await call('start_twenty_questions', { category: 'food' })).toContain("thinking of a food");
       expect(twenty.status()).toContain('20 questions left');
+    });
+
+    test('wrong guesses are echoed without a wrong article', async () => {
+      expect(await call('make_guess', { guess: 'kittens' })).toContain("it's not kittens.");
+      expect(await call('make_guess', { guess: 'two cats' })).toContain("it's not two cats.");
+      expect(await call('make_guess', { guess: 'owl' })).toContain("it's not an owl.");
     });
 
     test('make_guess needs an exact match, not a mention', async () => {

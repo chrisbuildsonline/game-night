@@ -45,11 +45,11 @@
 <header>Game Night - simulated Alexa+ <button id="mute" type="button">Voice on</button></header>
 <div class="ringwrap idle" id="ring"><div class="ring"></div></div>
 <div id="state">Tap the mic or type</div>
-<div id="log"></div>
+<div id="log" role="log" aria-live="polite"></div>
 <form id="form" autocomplete="off">
-  <button class="btn" id="mic" type="button" title="Talk">&#127908;</button>
+  <button class="btn" id="mic" type="button" title="Talk" aria-label="Speak">&#127908;</button>
   <input id="text" placeholder="Say or type something..." aria-label="Message">
-  <button class="btn" type="submit" title="Send">&#10148;</button>
+  <button class="btn" type="submit" title="Send" aria-label="Send">&#10148;</button>
 </form>
 <footer>Connected to the Game Night MCP server over Streamable HTTP</footer>
 <script>
@@ -88,7 +88,7 @@ function pickVoice() {
   const vs = speechSynthesis.getVoices().filter((v) => /^en/i.test(v.lang));
   return vs.find((v) => /samantha|aria|jenny|google us english|female/i.test(v.name)) || vs[0];
 }
-function stopSpeaking() { speechSynthesis.cancel(); }
+function stopSpeaking() { if ('speechSynthesis' in window) speechSynthesis.cancel(); }
 function speak(text) {
   if (muted || !('speechSynthesis' in window)) { setState('idle'); return; }
   stopSpeaking();
@@ -100,23 +100,23 @@ function speak(text) {
 }
 
 let busy = false;
-function setBusy(b) { busy = b; input.disabled = b; }
+function setBusy(b) { busy = b; input.disabled = b; if (!b) input.focus(); }
 const SORRY = "Sorry, I couldn't reach Game Night.";
 async function send(text) {
   text = text.trim(); if (!text || busy) return;
   setBusy(true);
-  stopSpeaking();
-  add('user', text);
-  setState('thinking');
   try {
+    stopSpeaking();
+    add('user', text);
+    setState('thinking');
     const res = await fetch('/api/chat', { method: 'POST', headers: { 'content-type': 'application/json', ...(TOKEN ? { authorization: 'Bearer ' + TOKEN } : {}) }, body: JSON.stringify({ conversation, text }) });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     add('bot', data.reply, data.tools);
-    speak(data.reply);
+    try { speak(data.reply); } catch (e) { setState('idle'); }
   } catch (e) {
     add('bot', SORRY);
-    speak(SORRY);
+    try { speak(SORRY); } catch (e2) { setState('idle'); }
   } finally {
     setBusy(false);
   }

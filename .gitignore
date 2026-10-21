@@ -7,3 +7,4 @@ dist/
 .omc/
 test-results/
 playwright-report/
+*.sqlite-*

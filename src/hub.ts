@@ -13,6 +13,9 @@ export interface Game {
 
 // One household per server: each game has one current round, stored as JSON.
 const db = new Database(process.env.GAME_DB ?? 'game-night.sqlite');
+// Synchronous writes block the event loop under load; WAL with NORMAL sync keeps each save cheap and still durable across app crashes.
+db.run('PRAGMA journal_mode = WAL');
+db.run('PRAGMA synchronous = NORMAL');
 db.run('CREATE TABLE IF NOT EXISTS state (game TEXT PRIMARY KEY, data TEXT NOT NULL)');
 
 export function load<T>(game: string): T | null {

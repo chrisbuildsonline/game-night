@@ -7,7 +7,7 @@
 <style>
   :root { --bg:#05080f; --fg:#e8f1ff; --dim:#7d8aa5; --c1:#00d4ff; --c2:#2a6bff; --card:#0e1626; }
   * { box-sizing: border-box; }
-  html, body { height: 100%; margin: 0; }
+  html, body { height: 100vh; height: 100dvh; margin: 0; }
   body { background: radial-gradient(ellipse at 50% 20%, #0b1630 0%, var(--bg) 60%); color: var(--fg);
     font: 16px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; display: flex; flex-direction: column; align-items: center; }
   header { padding: 14px 16px 0; font-weight: 600; letter-spacing: .04em; color: var(--dim); display:flex; gap:12px; align-items:center; }
@@ -85,7 +85,6 @@ function pickVoice() {
   const vs = speechSynthesis.getVoices().filter((v) => /^en/i.test(v.lang));
   return vs.find((v) => /samantha|aria|jenny|google us english|female/i.test(v.name)) || vs[0];
 }
-speechSynthesis.onvoiceschanged = () => {};
 function stopSpeaking() { speechSynthesis.cancel(); }
 function speak(text) {
   if (muted || !('speechSynthesis' in window)) { setState('idle'); return; }
@@ -97,8 +96,12 @@ function speak(text) {
   speechSynthesis.speak(u);
 }
 
+let busy = false;
+function setBusy(b) { busy = b; input.disabled = b; }
+const SORRY = "Sorry, I couldn't reach Game Night.";
 async function send(text) {
-  text = text.trim(); if (!text) return;
+  text = text.trim(); if (!text || busy) return;
+  setBusy(true);
   stopSpeaking();
   add('user', text);
   setState('thinking');
@@ -109,8 +112,10 @@ async function send(text) {
     add('bot', data.reply, data.tools);
     speak(data.reply);
   } catch (e) {
-    add('bot', 'Sorry, something went wrong: ' + e.message);
-    setState('idle');
+    add('bot', SORRY);
+    speak(SORRY);
+  } finally {
+    setBusy(false);
   }
 }
 
@@ -127,13 +132,19 @@ if (SR) {
     for (const r of e.results) (r.isFinal ? (final += r[0].transcript) : (interim += r[0].transcript));
     input.value = final || interim;
   };
-  rec.onerror = () => {};
+  rec.onerror = (e) => { listening = false; mic.classList.remove('on'); setState('idle'); stateEl.textContent = (e.error === 'no-speech' || e.error === 'aborted') ? 'Did not catch that, try again' : 'Mic blocked, type instead'; };
   rec.onend = () => {
     listening = false; mic.classList.remove('on');
     const t = final || input.value; input.value = '';
-    if (t.trim()) send(t); else setState('idle');
+    if (t.trim()) send(t); else if (ring.classList.contains('listening')) setState('idle');
   };
 }
+let primed = false;
+document.addEventListener('pointerdown', () => {
+  if (primed || !('speechSynthesis' in window)) return;
+  primed = true;
+  const u = new SpeechSynthesisUtterance(''); u.volume = 0; speechSynthesis.speak(u);
+}, { once: true });
 mic.onclick = () => {
   stopSpeaking();
   if (!rec) { input.focus(); stateEl.textContent = 'Speech input not supported here - type instead'; return; }

@@ -5,12 +5,6 @@ import { bedrock, MODEL } from './llm';
 type ToolLog = { name: string; args: unknown; result: string };
 type McpTool = { name: string; description?: string; inputSchema: unknown };
 
-const FALLBACK_INSTRUCTIONS = `Game Night is a voice game hub for a family playing together, screen-free.
-You are the host. Keep every spoken turn short (one to three sentences), warm and playful, and end with what the players can do next.
-The server holds every secret (the culprit, the secret word). Never guess, invent or hint at a solution.
-Never read out text after "HOST NOTE:", it is guidance for you only.
-Start with list_games when the family wants to play and does not name a game.`;
-
 // ---- MCP client (lazy, once per process) ----
 let clientP: Promise<Client> | null = null;
 let toolsCache: McpTool[] | null = null;
@@ -61,9 +55,17 @@ const strip = (s: string) => s.split(/\n*HOST NOTE:/)[0].trim();
 // ---- per-conversation state ----
 type Conv = { history: Anthropic.MessageParam[]; game: 'whodunnit' | 'twenty' | null; expectRooms: boolean };
 const convs = new Map<string, Conv>();
+const MAX_CONVS = 200;
+const MAX_HISTORY = 60;
 const conv = (id: string) => {
   let c = convs.get(id);
-  if (!c) convs.set(id, (c = { history: [], game: null, expectRooms: false }));
+  if (!c) {
+    c = { history: [], game: null, expectRooms: false };
+    convs.set(id, c);
+    while (convs.size > MAX_CONVS) convs.delete(convs.keys().next().value!);
+  }
+  // reset at a user-turn boundary (this runs before the new user message is appended)
+  if (c.history.length > MAX_HISTORY) c.history = [];
   return c;
 };
 
@@ -78,7 +80,10 @@ export async function chat(conversation: string, text: string): Promise<{ reply:
     } catch (err) {
       console.error('[agent] Bedrock failed, using offline router:', (err as Error).message);
       c.history.length = histLen; // drop the half-finished turn
-      tools.length = 0;
+      if (tools.length > 0) {
+        // tools already ran this turn: re-running them offline would repeat side effects
+        return { reply: "Sorry, I lost my train of thought for a moment. Say that again and we'll pick up where we left off.", tools };
+      }
     }
   }
   return offlineTurn(c, text, tools);
@@ -87,13 +92,14 @@ export async function chat(conversation: string, text: string): Promise<{ reply:
 // ---- Bedrock tool-use loop ----
 async function bedrockTurn(c: Conv, text: string, log: ToolLog[]): Promise<string> {
   const client = await connect();
-  const instructions = client.getInstructions() ?? FALLBACK_INSTRUCTIONS;
+  const instructions = client.getInstructions() ?? '';
   const system = `${instructions}\n\nYou are a simulated Alexa+ running Game Night. Your replies are spoken aloud, so use plain sentences only: no markdown, no lists, no emoji. Reply in 1-3 sentences. Never read HOST NOTE text aloud.`;
   const tools = (await mcpTools()).map((t) => ({
     name: t.name,
     description: t.description ?? '',
     input_schema: t.inputSchema as Anthropic.Tool.InputSchema,
   }));
+  const start = c.history.length;
   c.history.push({ role: 'user', content: text });
   for (let i = 0; i < 8; i++) {
     const res = await bedrock!.messages.create({
@@ -105,6 +111,13 @@ async function bedrockTurn(c: Conv, text: string, log: ToolLog[]): Promise<strin
       output_config: { effort: 'low' },
     });
     c.history.push({ role: 'assistant', content: res.content });
+    // A cut-off turn may end in a tool_use with no result, which the next request would reject: drop the turn.
+    if (res.stop_reason === 'refusal' || res.stop_reason === 'max_tokens') {
+      c.history.length = start;
+      return res.stop_reason === 'refusal'
+        ? "Sorry, I can't help with that one. Want to play something else?"
+        : 'Sorry, I got carried away there. Could you say that again?';
+    }
     if (res.stop_reason !== 'tool_use') {
       return res.content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map((b) => b.text).join(' ').trim() || 'Okay.';
     }

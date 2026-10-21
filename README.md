@@ -108,7 +108,7 @@ bun start                  # Game Night on http://localhost:8686 (MCP endpoint: 
   - case validation;
   - the 20-question limit;
   - guesses, give-up, and the race between a slow answer and a new round.
-- **End-to-end smoke check** (with the server running): `bun run smoke`. It connects as an MCP client over Streamable HTTP, checks that it negotiates protocol `2025-11-25`, lists all 11 tools, plays both games, and calls the web app's API.
+- **End-to-end smoke check** (with the server running): `bun run smoke` (set `MCP_URL=http://localhost:<port>/mcp` if you changed `PORT`). It connects as an MCP client over Streamable HTTP, checks that it negotiates protocol `2025-11-25`, lists all 11 tools, plays both games, and calls the web app's API.
 - **Any MCP client:** point it at `http://localhost:8686/mcp`, for example `npx @modelcontextprotocol/inspector`. You can also use plain curl:
 
   ```sh

@@ -57,7 +57,7 @@ The tool descriptions are written for a voice host. They give example family phr
 
 ## Amazon Bedrock (AWS Builder mini-challenge)
 
-`src/llm.ts` calls Claude on Amazon Bedrock through Anthropic's Bedrock client (`AnthropicBedrockMantle` from `@anthropic-ai/bedrock-sdk`). The default model id is `anthropic.claude-sonnet-5-5`. Bedrock is used in three places:
+`src/llm.ts` calls Claude on Amazon Bedrock through Anthropic's Bedrock client (`AnthropicBedrock` from `@anthropic-ai/bedrock-sdk`, which uses the `bedrock-runtime` endpoint, InvokeModel). The default model id is `us.anthropic.claude-sonnet-4-6`, a cross-region inference profile. Bedrock is used in three places:
 
 1. **Case generation** (`start_case`). Claude writes a case as structured JSON (`output_config.format` with a Zod schema). The server re-validates it with Zod and with `validateCase()`, which checks that the case is solvable and consistent:
    - the culprit is implicated by at least 2 clues and never cleared;
@@ -82,17 +82,17 @@ Configuration is read only from environment variables. Bun loads a `.env` file i
 | `AWS_REGION` | `us-east-1` | Bedrock region |
 | AWS credentials | none | `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`, or `AWS_PROFILE`, or a Bedrock API key in `AWS_BEARER_TOKEN_BEDROCK`. Any of them switches Bedrock on |
 | `BEDROCK` | auto | `on` forces Bedrock (default AWS credential chain), `off` forces the offline fallbacks |
-| `BEDROCK_MODEL_ID` | `anthropic.claude-sonnet-5-5` | Bedrock model id |
+| `BEDROCK_MODEL_ID` | `us.anthropic.claude-sonnet-4-6` | Bedrock model id |
 | `HOST` | `127.0.0.1` | Interface to bind. Keep the default behind a tunnel |
 | `PORT` | `8686` | HTTP port |
 | `ALLOWED_HOSTS` | none | Comma-separated public hostnames (e.g. your tunnel host) allowed in `Host`/`Origin` on `/mcp`. Localhost is always allowed |
 | `GAME_NIGHT_TOKEN` | none | When set, `/mcp` and `/api/chat` require `Authorization: Bearer <token>` (open the page with `#token=<token>`) |
 | `GAME_DB` | `game-night.sqlite` | SQLite file |
 
-> **Status: the Bedrock path has not been run against the live service.** There were no AWS credentials on the build machine, and the hackathon's AWS credits ran out on Oct 7. The code is type-checked and follows the SDK's documented API, but treat it as untested until someone runs it. To enable it:
-> 1. In the AWS console, open Amazon Bedrock in your region and enable access to Claude Sonnet 5.5.
+> **Status: blocked by an AWS quota.** The Bedrock API key authenticates and the account has access to Claude Sonnet 4.6 on `bedrock-runtime`. As of 2026-10-22, though, the account's daily token quota is exhausted ("Too many tokens per day, please wait before trying again."), so live calls fall back to the offline paths until AWS raises it (Service Quotas, Amazon Bedrock, the tokens-per-day quotas for Claude Sonnet 4.6 cross-region, or an AWS Support case). `bun run test:live` reports this case distinctly, as an AWS quota block rather than a code failure. To enable Bedrock:
+> 1. In the AWS console, open Amazon Bedrock in your region and enable access to Claude Sonnet 4.6. `scripts/enable-claude-bedrock.sh` accepts the Anthropic model agreements from CloudShell as root.
 > 2. Export credentials, e.g. `export AWS_BEARER_TOKEN_BEDROCK=...` (a Bedrock API key) or `export AWS_PROFILE=...`, plus `export AWS_REGION=us-east-1`.
-> 3. Run `bun start`. The startup line says `Bedrock: anthropic.claude-sonnet-5-5` instead of `Bedrock: off`.
+> 3. Run `bun start`. The startup line says `Bedrock: us.anthropic.claude-sonnet-4-6` instead of `Bedrock: off`.
 
 ## Run it
 
@@ -183,7 +183,7 @@ Recorded on the simulated Alexa+ web app with speech on. Lead with the mystery r
 - One household per server: each game has one current round.
 - No OAuth, so it is not ready to register with Alexa+ as is (see above). The optional static bearer token is for clients you control.
 - The offline Twenty Questions answerer only knows the facts in its table. Unusual questions get "try asking another way" and are not counted.
-- Bedrock paths are untested against the live service.
+- Bedrock paths are not verified end to end: the account's daily token quota is exhausted (see the Bedrock section), so live calls currently fall back offline.
 
 See [FRICTION.md](FRICTION.md) for the friction log.
 

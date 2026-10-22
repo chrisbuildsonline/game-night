@@ -43,7 +43,11 @@ const readState = <T>(game: string): T => {
     db.close();
   }
 };
+const QUOTA_MARKER = '[bedrock] AWS daily token quota exhausted';
+const QUOTA_MESSAGE =
+  "Needs fix: the AWS account's daily Bedrock token quota is exhausted (Too many tokens per day). This is an AWS quota block, not a code failure. Request an increase in Service Quotas → Amazon Bedrock (tokens per day, Claude Sonnet 4.6 cross-region) or open an AWS Support case.";
 const expectNoFallback = () => {
+  if (serverLog.includes(QUOTA_MARKER)) throw new Error(QUOTA_MESSAGE);
   for (const m of FALLBACK_MARKERS) expect(serverLog, `server log contains "${m}": Bedrock failed and the offline fallback answered`).not.toContain(m);
 };
 
@@ -51,6 +55,14 @@ const expectNoFallback = () => {
 afterEach(expectNoFallback);
 
 beforeAll(async () => {
+  // Fast preflight: one tiny real call, so a quota block stops the run here with one clear message.
+  const { bedrock, MODEL, isQuotaError } = await import('../src/llm');
+  try {
+    await bedrock!.messages.create({ model: MODEL, max_tokens: 8, messages: [{ role: 'user', content: 'Say ok.' }] });
+  } catch (err) {
+    if (isQuotaError(err)) throw new Error(`${QUOTA_MESSAGE} (${(err as Error).message})`);
+    throw err;
+  }
   proc = Bun.spawn(['bun', 'src/server.ts'], {
     cwd: new URL('..', import.meta.url).pathname,
     env: { ...env, PORT: String(PORT), GAME_DB: dbPath, GAME_NIGHT_TOKEN: '' },

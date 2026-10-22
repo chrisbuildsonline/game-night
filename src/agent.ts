@@ -1,6 +1,6 @@
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import type Anthropic from '@anthropic-ai/sdk';
-import { bedrock, MODEL } from './llm';
+import { bedrock, isQuotaError, MODEL, QUOTA_MARKER } from './llm';
 
 type ToolLog = { name: string; args: unknown; result: string };
 type McpTool = { name: string; description?: string; inputSchema: unknown };
@@ -93,6 +93,7 @@ export async function chat(conversation: string, text: string): Promise<{ reply:
       const reply = await bedrockTurn(c, text, tools);
       return { reply, tools };
     } catch (err) {
+      if (isQuotaError(err)) console.error(`${QUOTA_MARKER}: ${(err as Error).message}`);
       console.error('[agent] Bedrock failed, using offline router:', (err as Error).message);
       c.history.length = histLen; // drop the half-finished turn
       if (tools.length > 0) {

@@ -144,7 +144,7 @@ function report(target: string, failures: Failure[]) {
 }
 
 async function send(body: string | Uint8Array, headers: Record<string, string> = {}, path = '/mcp') {
-  const res = await fetch(`${BASE}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...headers }, body });
+  const res = await fetch(`${BASE}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...headers }, body: body as BodyInit });
   const text = await res.text();
   return { status: res.status, text };
 }

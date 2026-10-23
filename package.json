@@ -10,6 +10,7 @@
     "e2e": "playwright test",
     "load": "bun scripts/load.ts",
     "test:live": "bun test ./live",
+    "demo:video": "bun scripts/demo-video.ts",
     "test:all": "bun test && bun run smoke && playwright test"
   },
   "dependencies": {

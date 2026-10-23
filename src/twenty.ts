@@ -46,8 +46,8 @@ const KEYWORDS: [RegExp, string][] = [
   [/swim|\bwater\b/, 'swims'], [/four legs|4 legs/, 'legs4'], [/\beat\b|\bfood\b|edible|snack|\bmeal\b/, 'edible'],
   [/sweet|sugar|dessert/, 'sweet'], [/fruit/, 'fruit'], [/vegetable|veggie/, 'vegetable'], [/\bhot\b|\bwarm\b/, 'hot'],
   [/\bcold\b|frozen|\bcool\b/, 'cold'], [/electronic|electric|plug|battery|screen/, 'electronic'],
-  [/kitchen/, 'kitchen'], [/\btoy\b|play with/, 'toy'], [/wood/, 'wooden'], [/metal/, 'metal'],
-  [/outside|outdoors?/, 'outdoors'], [/round|circle/, 'round'], [/\bred\b/, 'red'], [/green/, 'green'], [/yellow/, 'yellow'],
+  [/kitchen/, 'kitchen'], [/\btoy\b|play with/, 'toy'], [/\bwood(?:en)?\b/, 'wooden'], [/metal/, 'metal'],
+  [/outside|outdoors?/, 'outdoors'], [/\bround\b|\bcircle\b/, 'round'], [/\bred\b/, 'red'], [/green/, 'green'], [/yellow/, 'yellow'],
 ];
 
 const norm = (s: string) => ` ${s.toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\b(a|an|the)\b/g, ' ').replace(/\s+/g, ' ').trim()} `;

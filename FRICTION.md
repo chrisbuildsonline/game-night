@@ -10,7 +10,8 @@ Severity: High = blocked a feature, Medium = cost real time or forced a design c
 - **Expected:** Request the $150 hackathon AWS credits and test Bedrock end to end.
 - **Actual:** The rules say credit requests closed Oct 21 12pm PT and that "October 7th Update: We are out of credit codes". With no credentials on the build machine we could not run a single Bedrock call.
 - **Severity:** High
-- **Workaround:** Every Bedrock call has a deterministic offline fallback (hand-written cases, a fact-table yes/no answerer, a rule-based intent router), and Bedrock switches on automatically when credentials are present. The Bedrock code is type-checked but has not run against the live service.
+- **Workaround:** Every Bedrock call has a deterministic offline fallback (hand-written cases, a fact-table yes/no answerer, a rule-based intent router), and Bedrock switches on automatically when credentials are present.
+- **Update (Oct 22):** A Bedrock API key was added after this entry. It authenticates, and the account can reach Claude Sonnet 4.6, but the daily token quota is exhausted, so live calls still fall back offline. `bun run test:live` reports that as an AWS quota block, not a code failure.
 - **Suggestion:** Give hackathon entrants a small Bedrock sandbox, or a free-tier path that doesn't need credits, for the whole submission window.
 
 ## 2. Two TypeScript MCP SDK lines, and the README doesn't match the protocol version served

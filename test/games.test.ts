@@ -131,6 +131,15 @@ describe('Twenty Questions', () => {
       expect(answerOffline(dog, 'Is it a cat?')).toEqual({ answer: 'no', isCorrectGuess: false });
       expect(answerOffline(dog, 'blorp').answer).toBe('unclear');
     });
+    test('would and around are not read as wooden or round', () => {
+      const apple = ITEMS.find((i) => i.name === 'apple')!;
+      const pencil = ITEMS.find((i) => i.name === 'pencil')!;
+      expect(answerOffline(apple, 'Would it be red?').answer).toBe('yes');
+      expect(answerOffline(dog, 'Would it be red?').answer).toBe('no');
+      expect(answerOffline(pencil, 'Is it made of wood?').answer).toBe('yes');
+      expect(answerOffline(pencil, 'Is it wooden?').answer).toBe('yes');
+      expect(answerOffline(dog, 'Is it found around the house?').answer).toBe('unclear');
+    });
   });
 
   describe('game flow', () => {

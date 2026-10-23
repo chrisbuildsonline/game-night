@@ -1,8 +1,8 @@
-// Records the demo video (under 3 min) with a voice track: architecture, the live MCP protocol, voice gameplay in
+// Records the demo video (under 3 min) with a voice track and a quiet synthesized pad: architecture, the live MCP protocol, voice gameplay in
 // the simulated Alexa+ web app, the Bedrock integration code and the real test results.
 // Needs ffmpeg and uvx (edge-tts voices). Runs its own server on :8703 with a throwaway DB and Bedrock off.
 // bun run demo:video -> out/game-night-demo.mp4
-import { chromium, type Page } from '@playwright/test';
+import { chromium, type Frame, type Page } from '@playwright/test';
 import { Database } from 'bun:sqlite';
 import { mkdtempSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -74,26 +74,50 @@ async function rpc(method: string, params?: unknown) {
 }
 const toolNames: string[] = (await rpc('tools/list')).result.tools.map((t: { name: string }) => t.name);
 
-// ---- 3. slides ----
+// ---- 3. slides (white, clean: Inter, soft shadows, window chrome, animated data flow) ----
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const CSS = `
-:root{--bg:#05080f;--fg:#e8f1ff;--dim:#7d8aa5;--c1:#00d4ff;--c2:#2a6bff;--card:#0e1626;--line:#1c2a47}
+:root{--ink:#0f172a;--dim:#64748b;--line:#e2e8f0;--soft:#f8fafc;--a1:#0284c7;--a2:#2563eb;--ok:#059669;--hot:#e11d48}
 *{box-sizing:border-box}
-body{margin:0;height:100vh;background:radial-gradient(ellipse at 50% 15%,#0b1630 0%,var(--bg) 60%);color:var(--fg);
- font:19px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:34px 52px;display:flex;flex-direction:column;overflow:hidden}
-h1{font-size:30px;margin:0 0 4px;color:var(--c1);letter-spacing:.02em} .sub{color:var(--dim);margin:0 0 20px;font-size:17px}
-.box{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 18px}
-.box b{color:var(--c1)} .dim{color:var(--dim)} .small{font-size:15px}
-.chip{display:inline-block;font:13px ui-monospace,Menlo,monospace;background:#16376b;border-radius:10px;padding:2px 8px;margin:3px 3px 0 0}
-.pill{display:inline-block;border:1px solid var(--line);border-radius:16px;padding:4px 12px;margin:4px 6px 0 0;font-size:15px;color:#c9d6ee}
-.term{background:#070b14;border:1px solid var(--line);border-radius:12px;padding:14px 18px;font:14px/1.45 ui-monospace,Menlo,monospace;overflow:hidden}
-.req{color:#5cf0ff;word-break:break-all}.res{color:#c9d6ee;white-space:pre-wrap;word-break:break-word;margin:2px 0 12px}
-.ok{color:#5be49b}.hl{background:#ff3b6b33;color:#ff8fab;border-radius:3px;padding:0 3px}
-.k{color:#7aa2ff}.s{color:#9be28f}.c{color:#6b7894}
-.in{animation:in .6s ease both} @keyframes in{from{opacity:0;transform:translateY(8px)}}
-.arrow{color:var(--c1);font-size:15px;text-align:center;align-self:center}
+body{margin:0;height:100vh;background:#fff;color:var(--ink);font:18px/1.45 Inter,system-ui,sans-serif;overflow:hidden;-webkit-font-smoothing:antialiased}
+body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellipse 60% 50% at 85% 0%,#eef6ff 0%,transparent 70%),radial-gradient(ellipse 50% 40% at 0% 100%,#f0fdfa 0%,transparent 70%);z-index:-1}
+.stage{position:absolute;inset:0;padding:40px 56px 56px;display:flex;flex-direction:column;animation:enter .7s cubic-bezier(.2,.7,.2,1) both}
+body.leaving .stage{opacity:0;transform:translateY(-8px);transition:all .45s ease}
+@keyframes enter{from{opacity:0;transform:translateY(14px)}}
+.eyebrow{font:600 13px Inter;letter-spacing:.16em;text-transform:uppercase;color:var(--a1);margin-bottom:6px}
+h1{font:700 34px/1.15 Inter;letter-spacing:-.02em;margin:0 0 6px}
+.lead{color:var(--dim);margin:0 0 22px;font-size:17px}
+.card{background:#fff;border:1px solid var(--line);border-radius:16px;padding:16px 20px;box-shadow:0 1px 2px rgba(15,23,42,.04),0 12px 32px rgba(15,23,42,.07)}
+.card b{font-weight:600}
+.chip{display:inline-block;font:500 12.5px 'JetBrains Mono',ui-monospace,monospace;background:#eff6ff;color:#1d4ed8;border:1px solid #dbeafe;border-radius:8px;padding:2px 8px;margin:4px 4px 0 0}
+.pill{display:inline-block;border:1px solid var(--line);background:#fff;border-radius:999px;padding:5px 14px;margin:4px 6px 0 0;font-size:14px;color:#334155;box-shadow:0 1px 2px rgba(15,23,42,.04)}
+.win{background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:0 1px 2px rgba(15,23,42,.05),0 18px 44px rgba(15,23,42,.10);overflow:hidden;display:flex;flex-direction:column}
+.bar{height:38px;display:flex;align-items:center;gap:7px;padding:0 14px;background:var(--soft);border-bottom:1px solid var(--line);flex:none}
+.bar i{width:11px;height:11px;border-radius:50%;background:#e2e8f0}.bar i:nth-child(1){background:#fca5a5}.bar i:nth-child(2){background:#fcd34d}.bar i:nth-child(3){background:#86efac}
+.bar span{margin-left:12px;font:500 12.5px 'JetBrains Mono',ui-monospace,monospace;color:var(--dim)}
+.mono{font:13.5px/1.55 'JetBrains Mono',ui-monospace,monospace}
+.k{color:#7c3aed}.s{color:#059669}.c{color:#94a3b8}.key{color:#2563eb}
+mark{background:#ffe4e6;color:var(--hot);border-radius:4px;padding:0 4px;font-weight:600}
+.in{animation:enter .6s cubic-bezier(.2,.7,.2,1) both}
+.chap{position:fixed;left:56px;bottom:18px;font:600 12px Inter;letter-spacing:.14em;text-transform:uppercase;color:#94a3b8}
+.chap b{color:var(--a1);margin-right:10px}
+.prog{position:fixed;left:0;right:0;bottom:0;height:3px;background:#f1f5f9}
+.prog i{display:block;height:100%;background:linear-gradient(90deg,var(--a1),var(--a2));animation:grow 1.2s ease both}
+@keyframes grow{from{width:var(--from)}to{width:var(--to)}}
+.flow{stroke:url(#g);stroke-width:2.5;fill:none;stroke-dasharray:7 9;animation:dash 1.4s linear infinite}
+@keyframes dash{to{stroke-dashoffset:-32}}
+@keyframes draw{to{stroke-dashoffset:0}}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(225,29,72,.0)}50%{box-shadow:0 0 0 8px rgba(225,29,72,.10)}}
 `;
-const slide = (body: string) => `<!doctype html><html><head><meta charset="utf-8"><style>${CSS}</style></head><body>${body}</body></html>`;
+const FONTS = '<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">';
+const CHAPTERS = ['Architecture', 'The MCP server, live', 'Voice gameplay', 'Amazon Bedrock', 'Tested'];
+function slide(body: string, chapter = 0) {
+  const chrome = chapter
+    ? `<div class="chap"><b>0${chapter}</b>${CHAPTERS[chapter - 1]}</div><div class="prog"><i style="--from:${((chapter - 1) / CHAPTERS.length) * 100}%;--to:${(chapter / CHAPTERS.length) * 100}%"></i></div>`
+    : '';
+  return `<!doctype html><html><head><meta charset="utf-8">${FONTS}<style>${CSS}</style></head><body><div class="stage">${body}</div>${chrome}</body></html>`;
+}
+const win = (title: string, inner: string, style = '') => `<div class="win" style="${style}"><div class="bar"><i></i><i></i><i></i><span>${title}</span></div>${inner}</div>`;
 
 // Real source, lightly coloured: comments, strings, keywords.
 function code(file: string, start: string) {
@@ -107,54 +131,79 @@ function code(file: string, start: string) {
     return body + (m[2] ? `<span class="c">${esc(m[2])}</span>` : '');
   }).join('\n');
 }
+// JSON with keys and strings coloured.
+const hlJson = (s: string) => esc(s).replace(/("(?:[^"\\]|\\.)*")(\s*:)?/g, (_, str, colon) => (colon ? `<span class="key">${str}</span>${colon}` : `<span class="s">${str}</span>`));
+
+const RING = (size: number) => `<svg width="${size}" height="${size}" viewBox="0 0 100 100" style="display:block;margin:0 auto">
+  <defs><linearGradient id="rg" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#06b6d4"/><stop offset="1" stop-color="#2563eb"/></linearGradient></defs>
+  <circle cx="50" cy="50" r="40" fill="none" stroke="#e0f2fe" stroke-width="7"/>
+  <circle cx="50" cy="50" r="40" fill="none" stroke="url(#rg)" stroke-width="7" stroke-linecap="round" stroke-dasharray="252" stroke-dashoffset="252" transform="rotate(-90 50 50)" style="animation:draw 1.6s .2s cubic-bezier(.6,.1,.2,1) forwards"/></svg>`;
 
 const TITLE = slide(`<div style="margin:auto;text-align:center">
-  <div style="width:120px;height:120px;margin:0 auto 26px;border-radius:50%;border:7px solid var(--c1);box-shadow:0 0 24px var(--c1),0 0 60px var(--c2),inset 0 0 24px var(--c2)"></div>
-  <h1 style="font-size:54px">Game Night</h1>
-  <p class="sub" style="font-size:22px">A voice game hub for Alexa+, built as a self-hosted MCP server</p>
-  <span class="pill">MCP spec 2025-11-25</span><span class="pill">Streamable HTTP</span><span class="pill">TypeScript MCP SDK</span><span class="pill">Amazon Bedrock</span><span class="pill">SQLite</span>
+  ${RING(116)}
+  <h1 class="in" style="font-size:64px;margin-top:26px;animation-delay:.5s">Game Night</h1>
+  <p class="lead in" style="font-size:21px;animation-delay:.8s">A voice game hub for Alexa+, built as a self-hosted MCP server</p>
+  <div class="in" style="animation-delay:1.2s"><span class="pill">MCP spec 2025-11-25</span><span class="pill">Streamable HTTP</span><span class="pill">TypeScript MCP SDK</span><span class="pill">Amazon Bedrock</span><span class="pill">SQLite</span></div>
 </div>`);
 
-const ARCH = slide(`<h1>Architecture</h1><p class="sub">The server owns the rules and the secrets. The voice host only tells the story.</p>
-<div style="display:grid;grid-template-columns:1fr 150px 1.35fr 150px 1fr;gap:10px;flex:1;align-items:center">
-  <div class="box in" style="animation-delay:.2s"><b>Alexa+</b><br><span class="small dim">or the simulated Alexa+ web app (real MCP client + agent)</span><br><span class="small">Voice host: improvises the story, speaks tool results</span></div>
-  <div class="arrow in" style="animation-delay:1.5s">⇄<br>MCP 2025-11-25<br>Streamable HTTP<br>POST /mcp<br>JSON-RPC 2.0</div>
-  <div class="box in" style="animation-delay:3s"><b>Game Night MCP server</b><br><span class="small dim">Bun · TypeScript MCP SDK v2 · stateless per request</span><br>
-    ${toolNames.map((t) => `<span class="chip">${t}</span>`).join('')}</div>
-  <div class="arrow in" style="animation-delay:5s">⇄</div>
-  <div style="display:grid;gap:14px">
-    <div class="box in" style="animation-delay:6s"><b>SQLite</b><br><span class="small">Game state and secrets. Never sent to the model.</span></div>
-    <div class="box in" style="animation-delay:10s"><b>Amazon Bedrock</b><br><span class="small">Claude Sonnet 4.6, structured output → validator → hand-written fallback</span></div>
+// Boxes sit on a fixed 1168 x 440 canvas; the SVG draws the animated links between them.
+const box = (x: number, y: number, w: number, delay: number, inner: string) =>
+  `<div class="card in" style="position:absolute;left:${x}px;top:${y}px;width:${w}px;animation-delay:${delay}s">${inner}</div>`;
+const link = (d: string, delay: number) =>
+  `<path d="${d}" stroke="#e2e8f0" stroke-width="2.5" fill="none"/><path class="flow" d="${d}" style="opacity:0;animation:dash 1.4s linear infinite, enter .6s ${delay}s both"/>` +
+  `<circle r="4.5" fill="#2563eb" opacity="0"><animate attributeName="opacity" to="1" begin="${delay}s" dur=".3s" fill="freeze"/><animateMotion dur="2.2s" repeatCount="indefinite" begin="${delay}s" path="${d}"/></circle>`;
+const ARCH = slide(`<div class="eyebrow">How it works</div><h1>Architecture</h1><p class="lead">The server owns the rules and the secrets. The voice host only tells the story.</p>
+<div style="position:relative;width:1168px;height:440px">
+  <svg width="1168" height="440" style="position:absolute;inset:0"><defs><linearGradient id="g"><stop offset="0" stop-color="#06b6d4"/><stop offset="1" stop-color="#2563eb"/></linearGradient></defs>
+    ${link('M 250 200 L 430 200', 1.6)}${link('M 760 160 C 830 160, 840 80, 920 80', 5.5)}${link('M 760 250 C 830 250, 840 320, 920 320', 9.5)}</svg>
+  <div class="in" style="position:absolute;left:250px;top:128px;width:180px;text-align:center;font-size:12.5px;color:var(--dim);animation-delay:1.8s"><b style="color:var(--a1)">MCP 2025-11-25</b><br>JSON-RPC 2.0</div>
+  <div class="in" style="position:absolute;left:250px;top:214px;width:180px;text-align:center;font-size:12.5px;color:var(--dim);animation-delay:1.8s">Streamable HTTP<br>POST /mcp</div>
+  ${box(0, 120, 250, 0.3, '<div class="eyebrow">Voice host</div><b>Alexa+</b><div style="font-size:14px;color:var(--dim);margin-top:4px">or the simulated Alexa+ web app. Improvises the story, speaks tool results.</div>')}
+  ${box(430, 40, 330, 3, `<div class="eyebrow">Self-hosted</div><b>Game Night MCP server</b><div style="font-size:13.5px;color:var(--dim);margin:2px 0 6px">Bun · TypeScript MCP SDK v2 · stateless per request</div>${toolNames.map((t) => `<span class="chip">${t}</span>`).join('')}`)}
+  ${box(920, 20, 248, 6, '<div class="eyebrow">State</div><b>SQLite</b><div style="font-size:14px;color:var(--dim);margin-top:4px">Game state and secrets. Never sent to the model.</div>')}
+  ${box(920, 250, 248, 10, '<div class="eyebrow">AWS</div><b>Amazon Bedrock</b><div style="font-size:14px;color:var(--dim);margin-top:4px">Claude Sonnet 4.6, structured output, validator, hand-written fallback.</div>')}
+</div>
+<div class="in" style="animation-delay:14s;margin-top:auto"><span class="pill">binds 127.0.0.1</span><span class="pill">Host / Origin allowlist</span><span class="pill">bearer token when exposed</span><span class="pill">secrets stay server-side</span></div>`, 1);
+
+const PROTO = slide(`<div class="eyebrow">Live, unedited</div><h1>The MCP server, live</h1><p class="lead">Raw JSON-RPC to the running server, exactly as Alexa+ would send it</p>
+<div style="display:grid;grid-template-columns:1.75fr 1fr;gap:22px;flex:1;min-height:0">
+  ${win('POST http://localhost:8703/mcp', '<div class="mono" id="t" style="padding:14px 18px;overflow:hidden;flex:1"></div>', 'min-height:0')}
+  <div style="display:flex;flex-direction:column;gap:14px">
+    ${win('server-side SQLite', '<div class="mono" style="padding:12px 16px;color:var(--dim)">SELECT data FROM state<br>WHERE game = \'twenty\'</div><div class="mono" id="db" style="padding:0 16px 14px"></div>')}
+    <div id="note" class="card" style="opacity:0;font-size:15px"><b style="color:var(--hot)">The model never sees the secret.</b><br><span style="color:var(--dim)">The tool result has no answer in it. The server answers every question.</span></div>
   </div>
+</div>`, 2);
+
+const APP = slide(`<div class="eyebrow">Same server, by voice</div><h1>Voice gameplay</h1><p class="lead">The simulated Alexa+ app: a real MCP client and agent, speaking every reply</p>
+<div style="display:grid;grid-template-columns:620px 1fr;gap:26px;flex:1;min-height:0">
+  ${win('Game Night · simulated Alexa+', `<iframe src="${BASE}/" style="border:0;width:100%;flex:1"></iframe>`, 'min-height:0')}
+  <div style="display:flex;flex-direction:column;min-height:0"><div class="eyebrow" style="margin:4px 0 10px">Live MCP tool calls</div><div id="calls" style="display:flex;flex-direction:column;gap:12px"></div></div>
+</div>`, 3);
+
+const CODE = slide(`<div class="eyebrow">AWS Builder</div><h1>Amazon Bedrock integration</h1><p class="lead">Claude on Bedrock with Zod-checked structured output, a validator, one retry, then a hand-written fallback</p>
+<div style="display:flex;flex-direction:column;gap:14px;min-height:0">
+  ${win('src/llm.ts', `<pre class="mono" style="margin:0;padding:12px 18px;font-size:12px;line-height:1.45">${code('src/llm.ts', 'export async function askJson')}</pre>`)}
+  ${win('src/whodunnit.ts', `<pre class="mono" style="margin:0;padding:12px 18px;font-size:12px;line-height:1.45;white-space:pre-wrap">${code('src/whodunnit.ts', 'async function makeCase')}</pre>`, 'animation:enter .6s 8s both')}
+</div>`, 4);
+
+const stat = (n: string, label: string, delay: number) =>
+  `<div class="card in" style="text-align:center;padding:26px 18px;animation-delay:${delay}s"><div class="count" data-to="${n}" style="font:700 56px/1 Inter;letter-spacing:-.03em;background:linear-gradient(90deg,#0284c7,#2563eb);-webkit-background-clip:text;color:transparent">0</div><div style="margin-top:10px;color:var(--dim);font-size:15px">${label}</div></div>`;
+const TESTS = slide(`<div class="eyebrow">Run just now, before this recording</div><h1>Tested end to end</h1><p class="lead">Every number below comes from the run that preceded this video</p>
+<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:22px">
+  ${stat(units.pass, 'unit, integration and fuzz tests passing<br>including a real MCP client', 0.3)}
+  ${stat(e2ePassed, 'Playwright end-to-end tests<br>both games clicked through', 1.6)}
+  ${stat(units.fail, 'failures · tsc --noEmit clean', 2.9)}
 </div>
-<div class="in" style="animation-delay:14s"><span class="pill">binds 127.0.0.1</span><span class="pill">Host / Origin allowlist</span><span class="pill">bearer token required when exposed</span><span class="pill">all secrets server-side</span></div>`);
-
-const PROTO = slide(`<h1>The MCP server, live</h1><p class="sub">Raw JSON-RPC to POST /mcp on the running server, as Alexa+ would send it</p>
-<div style="display:grid;grid-template-columns:1.7fr 1fr;gap:16px;flex:1;min-height:0">
-  <div class="term" id="t"></div>
-  <div style="display:flex;flex-direction:column;gap:12px"><div class="box small"><b>Server-side SQLite</b><br><span class="dim">SELECT data FROM state WHERE game = 'twenty'</span></div>
-  <div class="term" id="db" style="flex:1"></div></div>
-</div>`);
-
-const CODE = slide(`<h1>Amazon Bedrock integration</h1><p class="sub">src/llm.ts and src/whodunnit.ts: Claude on Bedrock with a Zod-checked structured output, a validator, one retry, then a fallback</p>
-<div class="term in" style="font-size:12.5px;line-height:1.35;white-space:pre;margin-bottom:10px">${code('src/llm.ts', 'export async function askJson')}</div>
-<div class="term in" style="font-size:12.5px;line-height:1.35;white-space:pre;animation-delay:8s">${code('src/whodunnit.ts', 'async function makeCase')}</div>`);
-
-const TESTS = slide(`<h1>Tested end to end</h1><p class="sub">Run just now, before this recording</p>
-<div class="term" style="font-size:17px;line-height:1.6">
-<div class="in"><span class="req">$ bun test</span> <span class="dim">unit, integration (real MCP client), fuzz, acceptance</span></div>
-<div class="in ok" style="animation-delay:1s">✓ ${units.pass} pass · ${units.fail} fail · ${units.expects} expect() calls · ${units.files} files</div>
-<div class="in" style="animation-delay:3s"><span class="req">$ bun run typecheck</span></div>
-<div class="in ok" style="animation-delay:3.6s">✓ tsc --noEmit: no errors</div>
-<div class="in" style="animation-delay:5s"><span class="req">$ bun run e2e</span> <span class="dim">Playwright, Chromium, both games clicked through</span></div>
-<div class="in ok" style="animation-delay:6s">✓ ${e2ePassed} passed</div>
-</div>
-<div class="in" style="animation-delay:8s;margin-top:18px"><span class="pill">validated LLM output, never a broken case</span><span class="pill">offline paths under 500 ms</span><span class="pill">fail-closed when exposed</span><span class="pill">MIT licensed</span></div>`);
+${win('terminal', `<div class="mono" style="padding:12px 18px;font-size:13px"><span style="color:var(--a1)">$ bun test</span>  <span class="s">✓ ${units.pass} pass · ${units.fail} fail · ${units.expects} expect() calls</span><br><span style="color:var(--a1)">$ bun run typecheck</span>  <span class="s">✓ no errors</span><br><span style="color:var(--a1)">$ bun run e2e</span>  <span class="s">✓ ${e2ePassed} passed</span></div>`, 'margin-top:22px;animation:enter .6s 4.5s both')}
+<div class="in" style="animation-delay:7s;margin-top:auto"><span class="pill">validated LLM output</span><span class="pill">offline paths under 500 ms</span><span class="pill">fail-closed when exposed</span><span class="pill">MIT licensed</span></div>
+<script>for (const el of document.querySelectorAll('.count')) { const to = +el.dataset.to, d = parseFloat(el.parentElement.style.animationDelay) * 1000, t0 = performance.now() + d;
+  (function tick(now) { const p = Math.min(1, Math.max(0, (now - t0) / 1400)); el.textContent = Math.round(to * (1 - Math.pow(1 - p, 3))); if (p < 1) requestAnimationFrame(tick); })(t0); }</script>`, 5);
 
 const OUTRO = slide(`<div style="margin:auto;text-align:center">
-  <h1 style="font-size:50px">Game Night</h1>
-  <p class="sub" style="font-size:22px">One MCP server · any number of voice games · secrets the model can't break</p>
-  <p style="font:18px ui-monospace,Menlo,monospace;color:#c9d6ee">bun install &amp;&amp; bun start</p>
+  ${RING(84)}
+  <h1 class="in" style="font-size:56px;margin-top:22px;animation-delay:.4s">Game Night</h1>
+  <p class="lead in" style="font-size:21px;animation-delay:.7s">One MCP server · any number of voice games · secrets the model can't break</p>
+  <div class="in mono" style="animation-delay:1.1s;display:inline-block;background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:8px 16px;color:#334155">bun install &amp;&amp; bun start</div>
 </div>`);
 
 // ---- 4. voice lines, synthesized up front so the recording never waits on edge-tts ----
@@ -174,16 +223,16 @@ const U = {
 };
 await Promise.all([...Object.values(N), ...Object.values(U)]);
 
+
 // ---- 5. recording ----
 const clips: { file: string; at: number }[] = [];
 const browser = await chromium.launch();
-const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 }, recordVideo: { dir: TMP, size: { width: 1280, height: 720 } } });
-// The voice track replaces the browser's own speech; the ring is driven from here instead.
+const ctx = await browser.newContext({ viewport: { width: 1280, height: 720 }, colorScheme: 'light', recordVideo: { dir: TMP, size: { width: 1280, height: 720 } } });
+// The voice track replaces the browser's own speech; the ring is driven from here instead (runs in the app's iframe too).
 await ctx.addInitScript(() => { if ('speechSynthesis' in window) speechSynthesis.speak = () => {}; });
 const page: Page = await ctx.newPage();
 const t0 = Date.now();
 const now = () => Date.now() - t0;
-const ring = (s: string) => page.evaluate((st) => (window as any).setState(st), s);
 
 // Plays a narration clip; the steps run spread across it (for reveals in sync with the voice).
 async function narrate(clip: Promise<Clip>, steps: (() => Promise<unknown>)[] = []) {
@@ -194,82 +243,99 @@ async function narrate(clip: Promise<Clip>, steps: (() => Promise<unknown>)[] = 
   await Bun.sleep(Math.max(0, c.ms - (now() - at)) + 350);
 }
 
-// The player speaks while the words appear, as speech-to-text would show them; then the host answers aloud.
-// The host's spoken reply is cut to its first `sentences` sentences to keep the video short; the screen shows it all.
+// Fade the current scene out, then load the next one (each scene fades itself in).
+async function show(html: string) {
+  await page.evaluate(() => document.body?.classList.add('leaving')).catch(() => {});
+  await Bun.sleep(450);
+  await page.setContent(html, { waitUntil: 'load' });
+}
+const add = (id: string, html: string) => page.evaluate(([i, h]) => { document.getElementById(i!)!.insertAdjacentHTML('beforeend', h!); }, [id, html]);
+const shorten = (s: string, max: number) => (s.length > max ? s.slice(0, max) + ' …' : s);
+async function exchange(method: string, params: unknown, view: (r: Awaited<ReturnType<typeof rpc>>) => string) {
+  const r = await rpc(method, params);
+  await add('t', `<div class="in" style="margin-bottom:12px"><div style="color:#0369a1;word-break:break-all"><span style="color:#94a3b8">→</span> ${hlJson(shorten(JSON.stringify(r.body), 150))}</div><div><span style="color:var(--ok)">← ${r.status} ${esc(r.type)}</span><br>${view(r)}</div></div>`);
+}
+
+let app: Frame;
+const ring = (s: string) => app.evaluate((st) => (window as any).setState(st), s);
+
+// The player speaks while the words appear, as speech-to-text would show them; then the host answers aloud and the
+// tool call it made appears in the side panel. The spoken reply is cut to its first `sentences` sentences; the screen shows it all.
 async function say(spoken: Promise<Clip>, typed: string, sentences: number) {
   const u = await spoken;
-  const bots = page.locator('.msg.bot');
+  const bots = app.locator('.msg.bot');
   const before = await bots.count();
   await ring('listening');
   clips.push({ file: u.file, at: now() });
   const start = now();
-  await page.getByLabel('Message').pressSequentially(typed, { delay: Math.min(70, u.ms / typed.length) });
+  await app.getByLabel('Message').pressSequentially(typed, { delay: Math.min(70, u.ms / typed.length) });
   await Bun.sleep(Math.max(0, u.ms - (now() - start)) + 150);
-  await page.getByLabel('Message').press('Enter');
-  await page.waitForFunction((b) => document.querySelectorAll('.msg.bot').length > b, before);
+  await app.getByLabel('Message').press('Enter');
+  await app.waitForFunction((b) => document.querySelectorAll('.msg.bot').length > b, before);
   const at = now();
   await ring('speaking');
-  const reply = await bots.last().evaluate((e) => e.firstChild?.textContent ?? '');
-  const h = await tts('host', reply.split(/(?<=[.!?])\s+/).slice(0, sentences).join(' '));
+  const msg = await bots.last().evaluate((e) => ({ reply: e.firstChild?.textContent ?? '', call: e.querySelector('summary')?.textContent ?? '', result: e.querySelector('details div')?.textContent ?? '' }));
+  const [name, ...args] = msg.call.replace(/^MCP: /, '').split(' ');
+  await add('calls', `<div class="card in" style="padding:12px 16px"><div class="mono" style="font-size:13px"><span style="color:#94a3b8">tools/call</span> <b style="color:var(--a2)">${esc(name!)}</b></div><div class="mono" style="font-size:12.5px;margin-top:2px">${hlJson(args.join(' '))}</div><div style="font-size:13px;color:var(--dim);margin-top:6px">${esc(shorten(msg.result.replace(/^\S+ -> /, ''), 110))}</div></div>`);
+  const h = await tts('host', msg.reply.split(/(?<=[.!?])\s+/).slice(0, sentences).join(' '));
   clips.push({ file: h.file, at });
   await Bun.sleep(Math.max(0, h.ms - (now() - at)) + 400);
   await ring('idle');
 }
 
-const show = (html: string) => page.setContent(html);
-const term = (id: string, html: string) => page.evaluate(([i, h]) => { document.getElementById(i!)!.insertAdjacentHTML('beforeend', h!); }, [id, html]);
-const shorten = (s: string, max: number) => (s.length > max ? s.slice(0, max) + ' …' : s);
-async function exchange(method: string, params: unknown, view: (r: Awaited<ReturnType<typeof rpc>>) => string) {
-  const r = await rpc(method, params);
-  await term('t', `<div class="in"><div class="req">→ POST /mcp ${esc(shorten(JSON.stringify(r.body), 150))}</div><div class="res"><span class="ok">← ${r.status} ${esc(r.type)}</span>\n${view(r)}</div></div>`);
-}
-
-await show(TITLE);
-await Bun.sleep(600);
+await page.setContent(TITLE, { waitUntil: 'load' });
+await Bun.sleep(900);
 await narrate(N.title);
 await show(ARCH);
 await narrate(N.arch);
 await show(PROTO);
 await narrate(N.proto, [
   () => exchange('initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'alexa-plus-sim', version: '1.0' } },
-    (r) => esc(JSON.stringify({ protocolVersion: r.result.protocolVersion, serverInfo: r.result.serverInfo, capabilities: r.result.capabilities })).replace('2025-11-25', '<span class="hl">2025-11-25</span>')),
-  () => exchange('tools/list', undefined, (r) => `${r.result.tools.length} tools: ${esc(r.result.tools.map((t: { name: string }) => t.name).join(', '))}`),
-  () => exchange('tools/call', { name: 'start_twenty_questions', arguments: { category: 'animal' } }, (r) => esc(shorten(r.result.content[0].text, 230))),
+    (r) => hlJson(JSON.stringify({ protocolVersion: r.result.protocolVersion, serverInfo: r.result.serverInfo, capabilities: r.result.capabilities })).replace('2025-11-25', '<mark>2025-11-25</mark>')),
+  () => exchange('tools/list', undefined, (r) => `<span style="color:var(--dim)">${r.result.tools.length} tools</span> ${r.result.tools.map((t: { name: string }) => `<span class="chip">${esc(t.name)}</span>`).join('')}`),
+  () => exchange('tools/call', { name: 'start_twenty_questions', arguments: { category: 'animal' } }, (r) => esc(shorten(r.result.content[0].text.split('HOST NOTE')[0]!.trim(), 200))),
   async () => {
     await exchange('tools/call', { name: 'ask_question', arguments: { question: 'Is it alive?' } }, (r) => esc(shorten(r.result.content[0].text, 120)));
     const row = new Database(DB, { readonly: true }).query("SELECT data FROM state WHERE game = 'twenty'").get() as { data: string };
     const s = JSON.parse(row.data);
-    await term('db', `<div class="in res">{\n  "secret": <span class="hl">"${esc(s.secret)}"</span>,\n  "phase": "${esc(s.phase)}",\n  "log": ${esc(JSON.stringify(s.log))}\n}</div>`);
+    await add('db', `<div class="in">{<br>&nbsp;&nbsp;<span class="key">"secret"</span>: <mark style="animation:pulse 1.6s ease-in-out infinite">"${esc(s.secret)}"</mark>,<br>&nbsp;&nbsp;<span class="key">"phase"</span>: <span class="s">"${esc(s.phase)}"</span>,<br>&nbsp;&nbsp;<span class="key">"questions"</span>: ${s.log.length}<br>}</div>`);
+    await page.evaluate(() => { const n = document.getElementById('note')!; n.classList.add('in'); n.style.opacity = '1'; });
   },
 ]);
-await page.goto(`${BASE}/`);
-await page.waitForLoadState('networkidle');
+await show(APP);
+app = (await (await page.waitForSelector('iframe')).contentFrame())!;
+await app.waitForLoadState('networkidle');
 await narrate(N.play);
 await say(U.start, 'start a mystery in the kitchen, the garage and the attic', 2);
 await say(U.attic, 'search the attic', 3);
 await say(U.accuse, 'I accuse Fitz', 3);
-await page.locator('.msg.bot summary').last().click();
-await Bun.sleep(1200);
+await Bun.sleep(900);
 await show(CODE);
 await narrate(N.code);
 await show(TESTS);
 await narrate(N.tests);
 await show(OUTRO);
 await narrate(N.outro);
-await Bun.sleep(800);
+await Bun.sleep(1200);
 
 await ctx.close();
 await browser.close();
 server.kill();
 
-// ---- 6. mix the voice track and encode ----
+// ---- 6. mix: voices + a quiet synthesized pad (no licensed music) that ducks under speech; encode ----
 const webm = join(TMP, readdirSync(TMP).find((f) => f.endsWith('.webm'))!);
 mkdirSync(OUT, { recursive: true });
 const out = join(OUT, 'game-night-demo.mp4');
+const secs = (now() / 1000).toFixed(2);
+// Two soft chords (A major add9, F#m7) crossfading every 8 s, low-passed, with a slow swell and a touch of echo.
+const chord = (f: number[]) => f.map((hz, i) => `${(0.5 / (i + 1)).toFixed(2)}*sin(2*PI*${hz}*t+0.6*sin(2*PI*0.13*t))`).join('+');
+const pad = `aevalsrc='(0.5+0.5*cos(2*PI*t/16))*(${chord([220, 277.18, 329.63, 493.88])})+(0.5-0.5*cos(2*PI*t/16))*(${chord([185, 220, 277.18, 329.63])})':s=48000:d=${secs},`
+  + `lowpass=f=1100,aecho=0.8:0.6:180|360:0.25|0.15,volume=0.022,afade=t=in:d=2.5,afade=t=out:st=${(Number(secs) - 3).toFixed(2)}:d=3[pad]`;
 const inputs = clips.flatMap((c) => ['-i', c.file]);
-const mix = clips.map((c, i) => `[${i + 1}:a]adelay=${c.at}|${c.at}[a${i}]`).join(';')
-  + `;${clips.map((_, i) => `[a${i}]`).join('')}amix=inputs=${clips.length}:normalize=0[aud]`;
+const voices = clips.map((c, i) => `[${i + 1}:a]adelay=${c.at}|${c.at}[a${i}]`).join(';')
+  + `;${clips.map((_, i) => `[a${i}]`).join('')}amix=inputs=${clips.length}:normalize=0,asplit[v1][v2]`;
+const mix = `${voices};${pad};[pad][v2]sidechaincompress=threshold=0.015:ratio=6:attack=30:release=600[duck];[v1][duck]amix=inputs=2:normalize=0,alimiter=limit=0.9[aud]`;
 const ff = Bun.spawnSync(['ffmpeg', '-y', '-v', 'error', '-i', webm, ...inputs, '-filter_complex', `[0:v]scale=1920:1080:flags=lanczos,fps=30[v];${mix}`,
-  '-map', '[v]', '-map', '[aud]', '-c:v', 'libx264', '-crf', '18', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', out], { stderr: 'inherit' });
+  '-map', '[v]', '-map', '[aud]', '-c:v', 'libx264', '-crf', '17', '-preset', 'slow', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', out], { stderr: 'inherit' });
 if (ff.exitCode) throw new Error('ffmpeg failed');
 console.log(`demo video: ${out}`);

@@ -1,4 +1,12 @@
+<p align="center">
+  <img src="docs/logo.jpg" alt="Game Night logo" width="160">
+</p>
+
 # Game Night
+
+<p align="center">
+  <img src="docs/hero.jpg" alt="A family playing Game Night around a glowing voice ring" width="820">
+</p>
 
 A voice game hub for Alexa+, built for screen-free family game nights. It is one self-hosted MCP server (Streamable HTTP, MCP spec 2025-11-25) that holds each game's secrets and rules. The voice assistant does the storytelling.
 
@@ -16,6 +24,14 @@ A language model running a mystery on its own can forget who did it, or change t
 - The server keeps the rules: question counting, the 20-question limit, three accusations.
 
 The assistant improvises the voices and the drama. The server keeps it honest.
+
+<p align="center">
+  <img src="docs/ui.jpg" alt="Simulated Alexa+ screen: the cyan ring speaking a clue" width="820">
+</p>
+
+<p align="center">
+  <img src="docs/secrets.jpg" alt="Whodunnit rooms on the server, with the secret locked away" width="820">
+</p>
 
 ## Architecture
 
